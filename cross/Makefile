@@ -1,0 +1,93 @@
+# Binary file
+BIN = hm.cono
+
+OPTIONS := $(kind)
+OPTIONS += -DMERCHAN
+OPTIONS += -DNEW_ALIGN -DMILLENIUM
+
+ifeq ($(term),2h)
+  OPTIONS += -DDOSH
+endif
+
+ifndef bcmedio
+OPTIONS += -DBCMEDIO=0.8
+else
+OPTIONS += -DBCMEDIO=$(bcmedio)
+endif
+
+ifndef abmedio
+OPTIONS += -DABMEDIO=0.7
+else
+OPTIONS += -DABMEDIO=$(abmedio)
+endif
+
+ifndef align_b
+OPTIONS += -DALIGN_B=0.3
+else
+OPTIONS += -DALIGN_B=$(align_b)
+endif
+
+ifndef align_c
+OPTIONS += -DALIGN_C=0.5
+else
+OPTIONS += -DALIGN_C=$(align_c)
+endif
+
+ifndef m1
+OPTIONS += -DCENTROS_MASA_MIN=12.0
+else
+OPTIONS += -DCENTROS_MASA_MIN=$(m1)
+endif
+
+ifndef m2
+OPTIONS += -DCENTROS_MASA_MAX=12.5
+else
+OPTIONS += -DCENTROS_MASA_MAX=$(m2)
+endif
+
+ifndef angulo
+OPTIONS += -DANGULO=45
+else
+OPTIONS += -DANGULO=$(angulo)
+endif
+
+ifndef mag
+OPTIONS += -DMAG=19
+else
+OPTIONS += -DMAG=$(mag)
+endif
+
+# Flags
+CFLAGS = -O3 --ptxas-options=-v --use_fast_math
+LDFLAGS = -lcudart -lgomp -lgsl -lgslcblas -lm
+
+MACHINE=$(shell hostname)
+CFLAGS += -arch=sm_20
+
+# Compilers
+CC = nvcc
+LINKER = nvcc
+
+# Files
+MAKEFILE = Makefile
+C_SOURCES = $(BIN).cu
+HEADERS =
+C_OBJS = $(patsubst %.cu, %.o,$(C_SOURCES))
+
+todo: $(BIN) reescribe.x
+
+# Rules
+$(BIN): $(C_OBJS) $(HEADERS) $(MAKEFILE)
+	$(LINKER) $(C_OBJS) $(LDFLAGS) $(INCLUDES) $(LIBS) -o $(BIN)
+
+$(C_OBJS): $(C_SOURCES) $(HEADERS) $(MAKEFILE)
+	$(CC) $(OPTIONS) -c $(C_SOURCES) $(CFLAGS) $(INCLUDES)
+
+ngmedio.x: ngmedio.cu $(HEADERS) $(MAKEFILE)
+	$(LINKER) $(OPTIONS) $< $(LDFLAGS) $(INCLUDES) $(LIBS) -o $@
+
+reescribe.x: reescribe.c $(MAKEFILE)
+	gcc $(OPTIONS) -o $@ reescribe.c -lgsl -lgslcblas -lm
+
+clean:
+	rm -f $(BIN) reescribe.x *.o
