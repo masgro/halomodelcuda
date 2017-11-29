@@ -1,0 +1,40 @@
+FileBase         ics       % Base-filename of output files
+OutputDir        ./        % Directory for output
+
+Omega            0.25     % Total matter density  (at z=0)
+OmegaLambda      0.75     % Cosmological constant (at z=0)
+OmegaBaryon      0.045   % Baryon density        (at z=0)
+HubbleParam      0.73     % Hubble paramater (may be used for power spec parameterization)
+Redshift         0         % Starting redshift
+
+Sigma8           0.900     % power spectrum normalization
+
+WhichSpectrum    1         % "1" selects Eisenstein & Hu spectrum,
+                           % "2" selects a tabulated power spectrum in
+                           % the file 'FileWithInputSpectrum'
+                           % otherwise, Efstathiou parametrization is used
+
+FileWithInputSpectrum   input_spectrum.txt  % filename of tabulated input
+                                            % spectrum (if used)
+
+InputSpectrum_UnitLength_in_cm  3.085678e24 % defines length unit of tabulated
+                                            % input spectrum in cm/h. 
+                                            % Note: This can be chosen different from UnitLength_in_cm
+
+ReNormalizeInputSpectrum   1                % if set to zero, the
+                                            % tabulated spectrum is
+                                            % assumed to be normalized
+                                            % already in its amplitude to
+                                            % the starting redshift,
+                                            % otherwise this is recomputed
+                                            % based on the specified sigma8
+
+
+ShapeGamma       0.21      % only needed for Efstathiou power spectrum 
+PrimordialIndex  1.0     % may be used to tilt the primordial index, 
+                           % primordial spectrum is k^PrimordialIndex
+
+                  
+UnitLength_in_cm          3.085678e21   % defines length unit of output (in cm/h) 
+UnitMass_in_g             1.989e43      % defines mass unit of output (in g/cm)
+UnitVelocity_in_cm_per_s  1e5           % defines velocity unit of output (in cm/sec)
