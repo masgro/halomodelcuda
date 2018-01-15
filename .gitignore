@@ -1,0 +1,6 @@
+cross/outputs/*.dat
+cross/plotter/*.dat
+pizza/outputs/*.dat
+pizza/plotter/*.dat
+*.x
+log.*
