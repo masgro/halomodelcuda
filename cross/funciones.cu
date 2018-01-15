@@ -47,13 +47,12 @@ __device__ float T2h(float *r, float *x){
    bc1 = x[2];
 
   lgm2 = x[3];
-   bc2 = x[5];
    ab2 = x[4];
+   bc2 = x[5];
 
   y[0] = x[6]; 
   y[1] = x[7]; 
   y[2] = x[8];
-
 
    m1 = powf(10.0f,lgm1);
   nu1 = Nu_M(lgm1);
@@ -69,8 +68,8 @@ __device__ float T2h(float *r, float *x){
 
   rotate(y,x[9],x[10],x[11],yy);
 
-  tmp  = u_esferico(yy,lgm2,sqrtf(r[0]*r[0]+r[1]*r[1]+r[2]*r[2]));
-  //tmp  = u(yy,bc2,ab2,lgm2,sqrtf(r[0]*r[0]+r[1]*r[1]+r[2]*r[2]));
+  //tmp  = u_esferico(yy,lgm2,sqrtf(r[0]*r[0]+r[1]*r[1]+r[2]*r[2]));
+  tmp  = u(yy,bc2,ab2,lgm2,sqrtf(r[0]*r[0]+r[1]*r[1]+r[2]*r[2]));
   tmp *= (RHOMEDIO/m1);
   #ifdef CG
   tmp *= (RHOMEDIO/m2);
@@ -81,7 +80,7 @@ __device__ float T2h(float *r, float *x){
   //tmp *= n(lgm2)*m2*m2/RHOMEDIO;
   tmp *= forma(bc2,ab2);
   tmp *= NORMA_ORIENTACION_CROSS; //factor para normalizar la func. de probabilidad de
-                            //orientacion del halo vecino.
+                                    //orientacion del halo vecino.
   tmp *= f_nu(nu1)*nu1*dlogNu_dlogM(lgm1)*FMNORM;
   /*FUNCION DE MASA FIT*/
   //tmp *= n(lgm1)*m1*m1/RHOMEDIO;

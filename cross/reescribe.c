@@ -137,6 +137,9 @@ int main(int argc, char **argv)
   }
 #endif
 
+  //sprintf(filename,"outputs/funcorr_%s_%.2f-%.2f_%02d_%.2f_%.2f_%.2f_%.2f_%2d.%s.%02d",
+  //                  term,CENTROS_MASA_MIN,CENTROS_MASA_MAX,ANGULO,
+  //                  BCMEDIO,ABMEDIO,ALIGN_B,ALIGN_C,MAG,kind,NUM);
   sprintf(filename,"outputs/funcorr_%s_%.2f-%.2f_%02d_%.2f_%.2f_%.2f_%.2f_%2d.%s.dat",
                     term,CENTROS_MASA_MIN,CENTROS_MASA_MAX,ANGULO,
                     BCMEDIO,ABMEDIO,ALIGN_B,ALIGN_C,MAG,kind);

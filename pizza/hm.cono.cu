@@ -3,15 +3,13 @@
 #include <stdio.h>
 #include <assert.h>
 #include <omp.h>
+#include "constantes.h"
+#include "colores.h"
 #include <vector_types.h>
 #include <cuda.h>
 #include <curand_kernel.h>
 #include <time.h>
-
-#include "constantes.h"
-#include "HandleError.h"
-
-//#include "HandleError.cu"
+#include "HandleError.cu"
 
 #define SIGMA   0.50000f
 #define SIGMA2  0.25000f
@@ -21,8 +19,7 @@
 #define ANGULO 45
 #endif
 
-//#define TRACERS_MASA_MIN 11.82f
-#define TRACERS_MASA_MIN 10.82f
+#define TRACERS_MASA_MIN 9.0f
 #define TRACERS_MASA_MAX 15.0f
 
 /*Cantidad total de hilos (RNG) que se van a tirar*/
@@ -44,8 +41,13 @@
 
 /*Intervalo espacial para la correlacion lineal*/
 #define RANGO 10.0f
+
 /*Grosor de la pizza*/
+#ifdef DOSH
+#define RANGOZ 50.0f
+#else
 #define RANGOZ 5.0f
+#endif
 
 /*Numero de dimensiones de la integral*/
 #ifdef DOSH
@@ -112,6 +114,7 @@ __constant__ float d_xmax[NDIM];
 /*Incluye archivo con todas las funciones necesarias*/
 #include "common_functions.cu"
 #include "funciones.cu"
+#include "interpolacion.cu"
 
 /*Kernel: toma un punto aleatorio en el espacio N-Dimensional
           y evalua la funcion integrando (T1h, T2h) en dicho punto.
@@ -154,14 +157,12 @@ __global__ void integra(curandState *state, float r, int eje){
           p[0] = r*cosf(x[NDIM-2]);
           p[1] = r*sinf(x[NDIM-2]);
           break;
-
         case 1 :
           x[NDIM-2] = dx[NDIM-2]*curand_uniform(&seed)+xmin[NDIM-2];
           x[NDIM-2] = x[NDIM-2]*GRAD2RAD;
           p[0] = r*cosf(x[NDIM-2]);
           p[1] = r*sinf(x[NDIM-2]);
           break;
-
         case 0 :
           x[NDIM-2] = dx[NDIM-2]*curand_uniform(&seed)+xmin[NDIM-2];
           x[NDIM-2] = x[NDIM-2]*GRAD2RAD;
@@ -171,28 +172,23 @@ __global__ void integra(curandState *state, float r, int eje){
       }
 
       p[2] = curand_normal(&seed); /*Linea de la visual*/
-      //p[2] = 2.0f*RANGOZ*curand_uniform(&seed) - RANGOZ; /*Linea de la visual*/
-
-      //if(curand_uniform(&seed) < 0.5)
-      //  p[0] = -p[0];
-      //if(curand_uniform(&seed) < 0.5)
-      //  p[1] = -p[1];
+      //p[2] = RANGOZ*(2.0*curand_uniform(&seed)-1.0); /*Linea de la visual*/
 
 #ifdef DOSH
       for(i = 0; i <= 9; i++)
         x[i] = dx[i] * curand_uniform(&seed) + xmin[i];
-      
+
       x[10] = curand_normal(&seed);
       x[11] = curand_normal(&seed);
       x[12] = curand_normal(&seed);
 
       tmp = x[10]*x[10] + x[11]*x[11] + x[12]*x[12];
-      if(tmp < 1.E-32){
-        tmp = 1.0E-16/sqrt(tmp);
+      if(tmp < 1.E-4){
+        tmp = 1.0E-2/sqrt(tmp);
         x[10] *= tmp;
         x[11] *= tmp;
         x[12] *= tmp;
-        tmp = 1.0E-32;
+        tmp = 1.0E-4;
       }
 
       /*sqrt(2·pi)^3 sigma^3 / exp(-tmp/2)*/
@@ -207,9 +203,18 @@ __global__ void integra(curandState *state, float r, int eje){
       p[2] *= RANGOZ;
 
       tmp *= T2h(p,x);
+
+      /*
+      tmp = SQRT_TWOPI_CUDA*RANGOZ*exp(p[2]*p[2]*0.5f);
+      p[2] *= RANGOZ;
+      tmp *= interpolador(p);
+      */
 #else 
       for(i = 0; i <= 4; i++)
         x[i] = dx[i] * curand_uniform(&seed) + xmin[i];
+
+      //x[3] = 1.0;
+      //x[4] = 0.0;
 
       /*sqrt(2·pi) RANGOZ / exp(-tmp/2)*/
       //tmp  = 2.0f*RANGOZ;
@@ -217,6 +222,12 @@ __global__ void integra(curandState *state, float r, int eje){
       p[2] *= RANGOZ;
 
       tmp *= T1h(p,x);
+
+      /*
+      tmp  = SQRT_TWOPI_CUDA*RANGOZ*exp(p[2]*p[2]*0.5f);
+      p[2] *= RANGOZ;
+      tmp *= interpolador(p);
+      */
 #endif
 
       if(isfinite(tmp))break;
@@ -233,7 +244,7 @@ __global__ void integra(curandState *state, float r, int eje){
   __syncthreads();
 
   if(it == 0){
-    value = 0.0; sigma = 0.0;
+    value = 0.0f; sigma = 0.0f;
     for(i = 0; i < THREADS_PER_BLOCK; i++){
       value += s_value[i];
       sigma += s_sigma[i];
@@ -294,7 +305,6 @@ int setseed(void){
 
 int main(int argc, char **argv){
   double time,elapsed;
-  double time1;
   FILE  *pfout;
   char  filename[200],term[200];
   int   i,j,l;
@@ -302,8 +312,6 @@ int main(int argc, char **argv){
   float r,s;
   float volumen;
   float h_radio;
-  //float *d_radio;
-  //int   *d_eje;
   curandState *devStates;
 
   elapsed = 0.0f;
@@ -325,9 +333,6 @@ int main(int argc, char **argv){
   cudaGetDeviceProperties(&devProp, DEVICE);
   printDevProp(devProp);
 
-  //HANDLE_ERROR(cudaMalloc((void **)&d_radio,sizeof(float)));
-  //HANDLE_ERROR(cudaMalloc((void **)&d_eje,sizeof(int)));
-  
   /*Chequea Cantidad de Threads y de Blocks*/
   assert(THREADS_PER_BLOCK <= 1024);
   assert(RNGS%THREADS_PER_BLOCK == 0); // should be divisible by blocks
@@ -336,8 +341,7 @@ int main(int argc, char **argv){
   dim3 dimBlock(THREADS_PER_BLOCK,1,1);
   dim3 dimGrid(RNGS/THREADS_PER_BLOCK,1,1);
 
-  fprintf(stdout,"Corriendo %d Blocks con %d threads cada uno\n",
-                        RNGS/THREADS_PER_BLOCK,THREADS_PER_BLOCK);
+  fprintf(stdout,"Corriendo %d Blocks con %d threads cada uno\n",RNGS/THREADS_PER_BLOCK,THREADS_PER_BLOCK);
 
   /*Allocatea memoria para el RNG*/
   HANDLE_ERROR(cudaMalloc((void **)&devStates,RNGS*sizeof(curandState)));
@@ -366,10 +370,12 @@ int main(int argc, char **argv){
   //float ngmedio = ng_medio(TRACERS_MASA_MIN,TRACERS_MASA_MAX,dimGrid,dimBlock,devStates);
 #endif
 
+#ifndef DOSH
   /*Chequea si la integral del perfil hasta el radio virial da 1*/
   float norma_perfil = normalizacion_perfil(dimGrid,dimBlock,devStates);
+#endif
   
-  prueba_ng_medio();
+  //prueba_ng_medio();
 
   /*Verifica que la integral de bias(nu)*f(nu) de 1*/
   //prueba_bias_f(dimGrid,dimBlock,devStates);
@@ -377,34 +383,31 @@ int main(int argc, char **argv){
   /*Calcula la normalizacion de la funcion de masa*/
   //normalizacion_func_masa(dimGrid,dimBlock,devStates);
 
+  proyectador_de_xilin(dimGrid,dimBlock,devStates);
+
   /*Setea los limites de integracion*/
   /*Halo Centro*/
   h_xmin[0] = (float)CENTROS_MASA_MIN; /*Masa minima*/
   h_xmax[0] = (float)CENTROS_MASA_MAX; /*Masa maxima*/
   /*Forma*/
-  h_xmin[1] = 0.00f; /* ab minimo */
+  h_xmin[1] = 0.10f; /* ab minimo */
   h_xmax[1] = 1.00f; /* ab maximo */
-  h_xmin[2] = 0.00f; /* bc minimo */
+  h_xmin[2] = 0.10f; /* bc minimo */
   h_xmax[2] = 1.00f; /* bc maximo */
 
-  //h_xmin[1] = ABMEDIO; /* ab minimo */
-  //h_xmax[1] = ABMEDIO; /* ab maximo */
-  //h_xmin[2] = BCMEDIO; /* bc minimo */
-  //h_xmax[2] = BCMEDIO; /* bc maximo */
-
-  h_xmin[3] =  0.0f;     /*Orientacion del Halo Centro*/ 
+  h_xmin[3] = -1.0f;     /*Orientacion del Halo Centro*/ 
   h_xmax[3] =  1.0f;      
   h_xmin[4] =  0.0f;      
-  h_xmax[4] =  0.5f*M_PI; 
+  h_xmax[4] =  2.0*M_PI; 
 
 #ifdef DOSH
   /*Halo Vecino*/
   h_xmin[5] = (float)TRACERS_MASA_MIN; /*Masa minima*/
   h_xmax[5] = (float)TRACERS_MASA_MAX; /*Masa maxima*/
-  h_xmin[6] = 0.0f; /* ab minimo */
-  h_xmax[6] = 0.0f; /* ab maximo */
-  h_xmin[7] = 0.0f; /* bc minimo */
-  h_xmax[7] = 0.0f; /* bc maximo */
+  h_xmin[6] = 0.10f; /* ab minimo */
+  h_xmax[6] = 1.00f; /* ab maximo */
+  h_xmin[7] = 0.10f; /* bc minimo */
+  h_xmax[7] = 1.00f; /* bc maximo */
 
   h_xmin[8] =  0.0f;
   h_xmax[8] =  0.0f;
@@ -425,35 +428,32 @@ int main(int argc, char **argv){
   h_xmin[NDIM-1] = 0.0f;
   h_xmax[NDIM-1] = 0.0f;
 
-  clock_t cuenta;
+#ifdef MERCHAN
+  float norma_merchan = integra_merchan(dimGrid,dimBlock,devStates);
+#endif
+
+  //clock_t cuenta;
   //cuenta = clock();
-  //float norma_merchan = integra_merchan(dimGrid,dimBlock,devStates);
-  //time1 = ((double)(clock()-cuenta))/((double)CLOCKS_PER_SEC);
+  //double i1,i2,a,b;
+  //a = ABMEDIO; b = 0.1;
+  //i1  = (2.0*(a-1.0)*b*exp(-a*a*0.5/b/b));
+  //i1 -= (sqrt(2.0*M_PI)*((a-1.0)*a+b*b)*erf((a-1.0)/sqrt(2.0)/b));
+  //i1 += (sqrt(2.0*M_PI)*((a-1.0)*a+b*b)*erf(a/sqrt(2.0)/b));
+  //i1 -= (2.*a*b*exp(-(a-1.0)*(a-1.0)*0.5/b/b));
+  //i1 *= (-0.5*b);
+  //i1 /= (sqrt(2.0*M_PI)*b);
+
+  //a = BCMEDIO; b = 0.1;
+  //i2  = (2.0*(a-1.0)*b*exp(-a*a*0.5/b/b));
+  //i2 -= (sqrt(2.0*M_PI)*((a-1.0)*a+b*b)*erf((a-1.0)/sqrt(2.0)/b));
+  //i2 += (sqrt(2.0*M_PI)*((a-1.0)*a+b*b)*erf(a/sqrt(2.0)/b));
+  //i2 -= (2.*a*b*exp(-(a-1.0)*(a-1.0)*0.5/b/b));
+  //i2 *= (-0.5*b);
+  //i2 /= (sqrt(2.0*M_PI)*b);
+
+  //float norma_merchan = i1*i2;
+  //double time1 = ((double)(clock()-cuenta))/((double)CLOCKS_PER_SEC);
   //printf("  NormaForma: %E time %.15E\n",norma_merchan,time1);
-
-  cuenta = clock();
-  double i1,i2,a,b;
-  a = ABMEDIO; b = 0.1;
-  i1  = (2.0*(a-1.0)*b*exp(-a*a*0.5/b/b));
-  i1 -= (sqrt(2.0*M_PI)*((a-1.0)*a+b*b)*erf((a-1.0)/sqrt(2.0)/b));
-  i1 += (sqrt(2.0*M_PI)*((a-1.0)*a+b*b)*erf(a/sqrt(2.0)/b));
-  i1 -= (2.*a*b*exp(-(a-1.0)*(a-1.0)*0.5/b/b));
-  i1 *= (-0.5*b);
-  i1 /= (sqrt(2.0*M_PI)*b);
-
-  a = BCMEDIO; b = 0.1;
-  i2  = (2.0*(a-1.0)*b*exp(-a*a*0.5/b/b));
-  i2 -= (sqrt(2.0*M_PI)*((a-1.0)*a+b*b)*erf((a-1.0)/sqrt(2.0)/b));
-  i2 += (sqrt(2.0*M_PI)*((a-1.0)*a+b*b)*erf(a/sqrt(2.0)/b));
-  i2 -= (2.*a*b*exp(-(a-1.0)*(a-1.0)*0.5/b/b));
-  i2 *= (-0.5*b);
-  i2 /= (sqrt(2.0*M_PI)*b);
-
-  float norma_merchan = i1*i2;
-  time1 = ((double)(clock()-cuenta))/((double)CLOCKS_PER_SEC);
-  printf("  NormaForma: %E time %.15E\n",norma_merchan,time1);
-  
-
 
 #ifdef DOSH
   float norma_align = integra_align(dimGrid,dimBlock,devStates);
@@ -466,12 +466,11 @@ int main(int argc, char **argv){
   /*Calcula el hipervolumen de integracion*/
   volumen = 1.0f;
 #ifdef DOSH
-  for(i = 0; i <= 4; i++) volumen *= (h_xmax[i] - h_xmin[i]);
-  //for(i = 3; i <= 4; i++) volumen *= (h_xmax[i] - h_xmin[i]);
-  for(i = 5; i <= 5; i++) volumen *= (h_xmax[i] - h_xmin[i]);
+  for(i = 0; i <= 2; i++) volumen *= (h_xmax[i] - h_xmin[i]);
+  for(i = 3; i <= 7; i++) volumen *= (h_xmax[i] - h_xmin[i]);
 #else
-  for(i = 0; i <= 4; i++) volumen *= (h_xmax[i] - h_xmin[i]);
-  //for(i = 3; i <= 4; i++) volumen *= (h_xmax[i] - h_xmin[i]);
+  for(i = 0; i <= 2; i++) volumen *= (h_xmax[i] - h_xmin[i]);
+  for(i = 3; i <= 4; i++) volumen *= (h_xmax[i] - h_xmin[i]);
 #endif
 
   /*Calcula la memoria total en el device*/
@@ -502,6 +501,18 @@ int main(int argc, char **argv){
   float dpaso;
   dpaso = (PASOMAX - PASOMIN)/(float)NPASOS;
 
+  /*
+  //sprintf(filename,"FC_3D_13.00-14.00_19.dat");
+  sprintf(filename,"MODEL_3D.13.00-14.00.19.dat");
+  pfout = fopen(filename,"r");
+  for(j = 0; j < N_inter; j++){
+    fscanf(pfout,"%f %f\n",&host_r[j],&host_f[j]);
+  }
+  fclose(pfout);
+  HANDLE_ERROR(cudaMemcpyToSymbol(dev_r,host_r,N_inter*sizeof(float)));
+  HANDLE_ERROR(cudaMemcpyToSymbol(dev_f,host_f,N_inter*sizeof(float)));
+  */
+
   /*Recorre las 3 direcciones j=0(parallel),1(perpendicular),2(iso)*/
   for(j = 0; j < 3; j++){
     /*Abre archivo de salida*/
@@ -514,21 +525,14 @@ int main(int argc, char **argv){
       h_radio = dpaso*(float)(i) + PASOMIN;
       h_radio = powf(10.0f,h_radio);
 
-      /*Copia posicion al device*/
-      //HANDLE_ERROR(cudaMemcpy(d_radio,&h_radio,sizeof(float),cudaMemcpyHostToDevice));
-      //HANDLE_ERROR(cudaMemcpy(d_eje,&j,sizeof(int),cudaMemcpyHostToDevice));
-
       /*Lanza kernel*/
       integra<<<dimGrid,dimBlock>>>(devStates,h_radio,j);
       cudaThreadSynchronize();
-
-      //suma<<<dimGrid,dimBlock>>>();
-      //cudaThreadSynchronize();
       /*Termina kernel*/
 
       CHECK_KERNEL_SUCCESS();
 
-      ////*Copia sumatorias al host y termina de reducir en el host*/
+      /*Copia sumatorias al host y termina de reducir en el host*/
       HANDLE_ERROR(cudaMemcpyFromSymbol(h_int,d_int,(RNGS/THREADS_PER_BLOCK)*sizeof(float)));
       HANDLE_ERROR(cudaMemcpyFromSymbol(h_sig,d_sig,(RNGS/THREADS_PER_BLOCK)*sizeof(float)));
 
@@ -539,9 +543,6 @@ int main(int argc, char **argv){
         r += h_int[l];
         s += h_sig[l];
       }
-
-      //HANDLE_ERROR(cudaMemcpyFromSymbol(&r,d_integral,sizeof(float)));
-      //HANDLE_ERROR(cudaMemcpyFromSymbol(&s,d_sigma,sizeof(float)));
 
       /*Estima la integral y el sigma*/
       r /= (float)((long)RNGS*(long)LAZOS);
@@ -567,8 +568,8 @@ int main(int argc, char **argv){
 #ifdef DOSH
       r /= norma_align;
       s /= norma_align;
-      //r /= norma_merchan;
-      //s /= norma_merchan;
+      r /= norma_merchan;
+      s /= norma_merchan;
 #endif
 
 #ifdef CG
@@ -589,7 +590,7 @@ int main(int argc, char **argv){
   /*Computa el tiempo total utilizado en el device*/
   chrono(STOP,&time);
   elapsed += time;
-  printf("Tiempo: %lf [seg] \n", elapsed);
+  sprintf(message,"Tiempo: %lf [seg] \n", elapsed);RED(message);
 
   /*Fin del programa*/
   return(EXIT_SUCCESS);

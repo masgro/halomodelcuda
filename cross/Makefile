@@ -3,7 +3,8 @@ BIN = hm.cono
 
 OPTIONS := $(kind)
 OPTIONS += -DMERCHAN
-OPTIONS += -DNEW_ALIGN -DMILLENIUM
+#OPTIONS += -DNEW_ALIGN
+OPTIONS += -DTAO_II
 
 ifeq ($(term),2h)
   OPTIONS += -DDOSH
@@ -58,7 +59,7 @@ OPTIONS += -DMAG=$(mag)
 endif
 
 # Flags
-CFLAGS = -O3 --ptxas-options=-v --use_fast_math
+CFLAGS = -O3 --use_fast_math #--ptxas-options=-v
 LDFLAGS = -lcudart -lgomp -lgsl -lgslcblas -lm
 
 MACHINE=$(shell hostname)

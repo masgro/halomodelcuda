@@ -3,7 +3,9 @@ BIN = hm.cono
 
 OPTIONS := $(kind)
 OPTIONS += -DMERCHAN
-OPTIONS += -DMAG=$(mag)
+OPTIONS += -DTAO_II
+#OPTIONS += -DSLOAN
+OPTIONS += -DNUM=$(num)
 
 ifeq ($(term),2h)
   OPTIONS += -DDOSH
@@ -58,7 +60,7 @@ OPTIONS += -DMAG=$(mag)
 endif
 
 # Flags
-CFLAGS = -O3 --use_fast_math # --ptxas-options=-v
+CFLAGS = -O3 --use_fast_math #--ptxas-options=-v
 LDFLAGS = -lcudart -lgomp -lgsl -lgslcblas -lm
 
 MACHINE=$(shell hostname)
@@ -77,8 +79,8 @@ C_OBJS = $(patsubst %.cu, %.o,$(C_SOURCES))
 todo: $(BIN) reescribe.x
 
 # Rules
-$(BIN): $(C_OBJS) HandleError.o $(HEADERS) $(MAKEFILE)
-	$(LINKER) HandleError.o $(C_OBJS) $(LDFLAGS) $(INCLUDES) $(LIBS) -o $(BIN)
+$(BIN): $(C_OBJS) $(HEADERS) $(MAKEFILE)
+	$(LINKER) $(C_OBJS) $(LDFLAGS) $(INCLUDES) $(LIBS) -o $(BIN)
 
 $(C_OBJS): $(C_SOURCES) $(HEADERS) $(MAKEFILE)
 	$(CC) $(OPTIONS) -c $(C_SOURCES) $(CFLAGS) $(INCLUDES)

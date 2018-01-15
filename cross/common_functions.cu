@@ -97,36 +97,65 @@ __device__ float forma(float bc, float ab){
   return(prob);
 }
 
+__host__ __device__ float NormProfile(float lgm){
+  /*Factor de normalizacion del perfil triaxial a 1 rvir*/
+  return(0.00317566*lgm*lgm -0.0349836*lgm + 0.92565684);
+}
+
+//__host__ __device__ float NormProfile(float lgm){
+//  /*Factor de normalizacion del perfil triaxial a 7 rvir*/
+//  return(0.00120187*lgm*lgm*lgm - 0.029077*lgm*lgm + 0.31231914*lgm - 0.0548865);
+//}
+
+
+//__host__ __device__ float NormProfileSphero(float lgm){
+//  /*Factor de normalizacion del perfil esferico a 5 rvir*/
+//  return(0.00083298*lgm*lgm*lgm - 0.01971112*lgm*lgm + 0.22341037*lgm + 0.67966451);
+//}
+
+__host__ __device__ float NormProfileSphero(float lgm){
+  /*Factor de normalizacion del perfil esferico a 7 rvir*/
+  return(0.001137*lgm*lgm*lgm - 0.02753825*lgm*lgm + 0.30728158*lgm + 0.48803499);
+}
+
   /*perfil de jing y suto a z=0* a[0]>a[1]>a[2]**/
 __host__ __device__ float u(float *r, float bc, float ab, float lgm, float rlim){
   float cvir,rvir,ce,Deltae,dc,rs,rr,rho;
   float prol;
 
-  if(bc < 0.01f) bc = 0.01f;
-  if(ab < 0.01f) ab = 0.01f;
-
-  /** parametro de concentracion **/
+  /** parametro de concentracion
+  log c = 1.020(+/- 0.015) - 0.109(+/- 0.005)*(log Mvir - 12.0); 
+  http://arxiv.org/pdf/astro-ph/0608157v2 **/
   cvir = 1.020f - 0.109f*(lgm - 12.0f); 
   cvir = powf(10.0f,cvir);
-//log c = 1.020(+/- 0.015) - 0.109(+/- 0.005)*(log Mvir - 12.0); 
-//http://arxiv.org/pdf/astro-ph/0608157v2
+
+  /*Cardone et al 2015*/
+  //cvir = 3.59*powf(powf(10.0,lgm)/5.e14,-0.084);
   /********************************/
 
   /** radio virial esferico **/
   rvir = log10(4.0f/3.0f*PI_CUDA*DELTAV*RHOCRIT);
   rvir = (lgm - rvir)/3.0f;
   rvir = powf(10.0f,rvir);
-#ifdef DOSH
+  #ifdef DOSH
   //if(rvir > rlim)return(0.0f);
-#endif
+  #endif
   /***************************/
 
   /** ajuste de JS **/
-  ce = FACTOR_JS*cvir;
+  //#ifdef DOSH
+  //ce = FACTOR_JS*cvir;
+  //#else
+  ce = 0.40*cvir;
+  //#endif
 
   /** como en JS ecuacion 13  smith 59 **/
   prol = 1.0f/((bc*bc)*ab);
-  Deltae = 5.0f*DELTAV*powf(prol ,0.75f);
+  //#ifdef DOSH
+  //Deltae = 5.0f*DELTAV*powf(prol,0.75f);
+  //#else
+  Deltae = 5.0f*DELTAV*powf(prol,0.85f);
+  //#endif
   dc = (Deltae*ce*ce*ce/3.0f)/(log(1.0f+ce)-ce/(1.0f+ce));
 
   /** ecuacion 59 Smith **/
@@ -137,56 +166,60 @@ __host__ __device__ float u(float *r, float bc, float ab, float lgm, float rlim)
   rr = r[2]*r[2] + r[1]*r[1]/(bc*bc) + r[0]*r[0]/(ab*ab*bc*bc);
   rr = sqrtf(rr);
 
-#ifdef DOSH
-  if(rr > 1.5f*rvir) return(0.0f);
-#else
-  //if(rr > 3.0f*rvir) return(0.0f);
-#endif
+  #ifdef DOSH
+  //if(rr > rvir) return(0.0f);
+  #endif
 
-  rr /= rs;
+  rr  /= rs;
+  rho  = RHOCRIT/powf(10.0f,lgm);
+  rho *= dc;
+  rho /= rr;
+  rho /= ((rr + 1.0f)*(rr + 1.0f));
+
+  //if(rho < 1.E-7) rho = 0.0f;
+  return(rho);
+  //#ifdef DOSH
+  //  return(rho/NormProfile(lgm));
+  //#else
+  //  return(rho);
+  //#endif
+}
+
+__host__ __device__ float u_esferico(float *r, float lgm, float rlim){
+  float cvir,rvir,dc,rs,rr,rho,ce;
+
+  cvir = 1.020f - 0.109f*(lgm - 12.0f); 
+  cvir = powf(10.0f,cvir);
+
+  /*Cardone et al 2015*/
+  //cvir = 3.59*powf(powf(10.0,lgm)/5.e14,-0.084);
+
+  /*** radio virial esferico ***/
+  rvir = log10(4.0f/3.0f*PI_CUDA*DELTAV*RHOCRIT);
+  rvir = (lgm - rvir)/3.0f;
+  rvir = powf(10.0f,rvir);
+  #ifdef DOSH
+  //if(rvir > rlim*0.5f)return(0.0f);
+  #endif
+  /*****************************/
+  ce = cvir;
+  dc = (DELTAV*ce*ce*ce/3.0f)/(log(1.0f+ce)-ce/(1.0f+ce));
+
+  /*** ecuacion 59 Smith ***/
+  rs = rvir/cvir;
+
+  /*ecuacion 4 paper smith*/
+  rr = r[2]*r[2] + r[1]*r[1] + r[0]*r[0];
+  rr = sqrtf(rr);
+
+  rr = rr/rs;
   rho  = RHOCRIT/powf(10.0f,lgm);
   rho *= dc;
   rho /= rr;
   rho /= ((rr + 1.0f)*(rr + 1.0f));
 
   if(rho < 1.E-33) rho = 0.0f;
-  return rho;
-}
-
-__host__ __device__ float u_esferico(float *r, float lgm, float rlim){
-  float cvir,rvir,dc,rs,rr,y,rho;
-
-  cvir = 1.020f - 0.109f*(lgm - 12.0f); 
-  cvir = powf(10.0f,cvir);
-
-/*** radio virial esferico ***/
-  rvir = log10(4.0f/3.0f*PI_CUDA*DELTAV*RHOCRIT);
-  rvir = (lgm - rvir)/3.0f;
-  rvir = powf(10.0f,rvir);
-#ifdef DOSH
-  //if(rvir > rlim*0.5f)return(0.0f);
-#endif
-/*****************************/
-
-  dc = (DELTAV*cvir*cvir*cvir/3.0f)/(log(1.0f+cvir)-cvir/(1.0f+cvir));
-
-/*** ecuacion 59 Smith ***/
-  rs = rvir/cvir;
-
-/*ecuacion 4 paper smith*/
-  rr = r[2]*r[2] + r[1]*r[1] + r[0]*r[0];
-  rr = sqrtf(rr);
-
-  if(rr > 2.0f*rvir) return(0.0f);
-  
-  y = rr/rs;
-  rho  = RHOCRIT/powf(10.0f,lgm);
-  rho *= dc;
-  rho /= y;
-  rho /= ((y + 1.0f)*(y + 1.0f));
-
-  if(rho < 1.E-33) rho = 0.0f;
-  return rho;
+  return(rho);
 }
 
 __host__ __device__ float bias(float nu){
@@ -250,34 +283,25 @@ __host__ __device__ float n(float lgm){
 
 __device__ float align(float theta, float phi){
   float p;
+#ifndef NEW_ALIGN
   p = ALIGN_C*expf(-(theta - PI_CUDA*0.5f)*(theta - PI_CUDA*0.5f)*0.5f/(ALIGN_B*ALIGN_B));
   p *= expf(-phi*phi*0.5f/(ALIGN_B*ALIGN_B));
   p += expf(-theta*theta*0.5f/(ALIGN_B*ALIGN_B));
+#endif
+
+#ifdef NEW_ALIGN
+  p  = ALIGN_C*cosf(theta)*cosf(theta);
+  p += (1.-cosf(theta)*cosf(theta))*((1.-ALIGN_B)*cosf(phi)*cosf(phi) + ALIGN_B);
+#endif
+
   return(p);
-}
-
-__device__ float b_r(float r){
-  float lr = log10f(r);
-  float tmp;
-  tmp = (lr > 0.0f)? -0.08333*lr + 0.4f : 0.4f;
-  if(lr >= 3.0f) tmp = 0.0f;
-  return(tmp);
-}
-
-__device__ float c_r(float r){
-  float lr = log10f(r);
-  float tmp;
-  float a = 0.0438600f ;
-  float b = 0.1494210f ;
-  float c = 1.0801300f ;
-  tmp = (lr > 0.0f)? 0.05f*a*lr*lr + b*lr + c : c;
-  return(tmp);
 }
 
 __device__ float align_masa(float x, float y, float z){
   float costheta;
   float r;
 
+#ifndef NEW_ALIGN
   r = x*x + y*y + z*z;
   r = sqrtf(r);
 
@@ -287,16 +311,35 @@ __device__ float align_masa(float x, float y, float z){
     costheta = fabsf(x)/r;
 
   return(align(acosf(costheta),atan2f(fabsf(z),fabsf(y))));
+#endif
+
+#ifdef NEW_ALIGN
+  r = x*x + y*y + z*z;
+  r = sqrtf(r);
+
+  if(r < 1.E-7)
+    costheta = 1.0f;
+  else
+    costheta = fabsf(z)/r;
+
+  return(align(acosf(costheta),atan2f(fabsf(y),fabsf(x))));
+#endif
+
 }
 
 __host__ __device__ float ncen(float lgm){
   float q;
+#ifdef TAO_II
   q = 0.5f;
   q *= (1.0f + (float)erf((lgm - NCEN_LOGMMIN)/NCEN_SIGMA));
+#endif
 
   /*TINKER*/
   //q = 0.5f;
   //q *= (1.0f + (float)erf((lgm - 11.5f)/NCEN_SIGMA));
+#ifdef SLOAN
+  q = NCEN_PLATEAU*(1.0f + (float)erf((lgm - NCEN_LOGMMIN)/NCEN_SIGMA));
+#endif
 
   return(q);
 }
@@ -328,12 +371,13 @@ __host__ __device__ float mom1(float lgm){
   float q,qcen,qsat;
   qcen = ncen(lgm);
   qsat = nsat(lgm);
-  if(lgm >= NCEN_LOGMMIN)
-    q = qcen + qsat;
-  else
-    q = qcen;
 
-  //q = nsat(lgm);
+  //if(lgm >= NCEN_LOGMMIN)
+  //  q = qcen + qsat;
+  //else
+  //  q = qcen;
+
+  q = qcen + qsat;
   return(q);
 }
 
@@ -610,7 +654,7 @@ __inline__ void prueba_bias_f(dim3 dimGrid, dim3 dimBlock, curandState *devState
   fprintf(stdout,"Prueba Bias*F: %e +/- %e\n",r,s);
 }
 
-/*Integrador de la funcion de masa para calcular la normalizacion*/
+/*Integrador de la funcion de formas para calcular la normalizacion*/
 __global__ void kernel_integra_merchan(curandState *state)
 {
   const unsigned int tid = threadIdx.x + blockIdx.x * THREADS_PER_BLOCK;
@@ -623,7 +667,7 @@ __global__ void kernel_integra_merchan(curandState *state)
   int i;
   __shared__ double s_value[THREADS_PER_BLOCK], s_sigma[THREADS_PER_BLOCK];
 
-  const float fmin = 0.0f, fmax = 1.0f;
+  const float fmin = 0.1f, fmax = 1.0f;
 
   /*Estado del RNG*/
   curandState seed = state[tid];
@@ -661,7 +705,7 @@ __global__ void kernel_integra_merchan(curandState *state)
   state[tid] = seed;
 }
 
-/*Computa la normalizacion de la funcion de masa*/
+/*Computa la normalizacion de la funcion de formas*/
 __inline__ float integra_merchan(dim3 dimGrid, dim3 dimBlock, curandState *devStates)
 {
   int k;
@@ -699,7 +743,7 @@ __inline__ float integra_merchan(dim3 dimGrid, dim3 dimBlock, curandState *devSt
   return(r);
 }
 
-/*Integrador de la funcion de masa para calcular la normalizacion*/
+/*Integrador de la funcion de alineamiento para calcular la normalizacion*/
 __global__ void kernel_integra_align(curandState *state){
   const unsigned int tid = threadIdx.x + blockIdx.x * THREADS_PER_BLOCK;
   const unsigned int it = threadIdx.x;
@@ -718,10 +762,19 @@ __global__ void kernel_integra_align(curandState *state){
   for(i = 0; i < LAZOSPLUS; i++){
     phi = curand_uniform(&seed)*PI_CUDA*0.5f;
     costheta = curand_uniform(&seed);
+#ifndef NEW_ALIGN
     x = costheta;
     y = sqrt(1.0f - costheta*costheta)*cos(phi);
     z = sqrt(1.0f - costheta*costheta)*sin(phi);
     tmp = align_masa(x,y,z);
+#endif
+
+#ifdef NEW_ALIGN
+    x = sqrt(1.0f - costheta*costheta)*cos(phi);
+    y = sqrt(1.0f - costheta*costheta)*sin(phi);
+    z = costheta;
+    tmp = align_masa(x,y,z);
+#endif
 
     value += tmp;
     sigma += tmp*tmp;
@@ -748,7 +801,7 @@ __global__ void kernel_integra_align(curandState *state){
   state[tid] = seed;
 }
 
-/*Computa la normalizacion de la funcion de masa*/
+/*Computa la normalizacion de la funcion de alineamiento*/
 __inline__ float integra_align(dim3 dimGrid, dim3 dimBlock, curandState *devStates){
   int k;
   float r, s;
@@ -785,7 +838,7 @@ __inline__ float integra_align(dim3 dimGrid, dim3 dimBlock, curandState *devStat
   return(r);
 }
 
-/*Integrador de la funcion de masa para calcular la normalizacion*/
+/*Integrador del perfil para calcular la normalizacion*/
 __global__ void integra_perfil(float rmin, float rmax, float lgm, curandState *state){
   const unsigned int tid = threadIdx.x + blockIdx.x * THREADS_PER_BLOCK;
   const unsigned int it = threadIdx.x;
@@ -801,9 +854,8 @@ __global__ void integra_perfil(float rmin, float rmax, float lgm, curandState *s
 
   value = 0.0f; sigma = 0.0f;
   for(i = 0; i < LAZOSPLUS; i++){
-
     rr       = curand_uniform(&seed)*(rmax - rmin) + rmin;
-    rr       = powf(10.0f,rr);
+    rr       = pow(10.0f,rr);
     phi      = PI_CUDA*0.5f*curand_uniform(&seed);
     costheta = curand_uniform(&seed);
 		sintheta = sqrtf(1.0f - costheta*costheta);
@@ -812,7 +864,8 @@ __global__ void integra_perfil(float rmin, float rmax, float lgm, curandState *s
     r[1] = rr*sintheta*sinf(phi);
     r[2] = rr*costheta;
 
-    tmp = u(r,BCMEDIO,ABMEDIO,lgm,1.0f)*powf(rr,3.0f)*LOGE10;
+    tmp = u(r,ABMEDIO,BCMEDIO,lgm,1.0f)*rr*rr*rr*LOGE10;
+    //tmp = u_esferico(r,lgm,1.0f)*powf(rr,3.0f)*LOGE10;
 
     //r[0] = (curand_uniform(&seed)*(rmax - rmin) + rmin);
     //r[0] = powf(10.0f,r[0]);
@@ -855,46 +908,51 @@ __global__ void integra_perfil(float rmin, float rmax, float lgm, curandState *s
   state[tid] = seed;
 }
 
-/*Computa la normalizacion de la funcion de masa*/
+/*Computa la normalizacion del perfil*/
 __inline__ float normalizacion_perfil(dim3 dimGrid, dim3 dimBlock, curandState *devStates){
   int k;
+  //int n;
   float r, s;
-  float lgm = 15.0f;
+  float lgm;
   float volumen;
   float rvir,rmin,rmax;
+  
+  //n = 1;
+	//FILE *pfout = fopen("Mass_vs_NormProfile.dat","w");
+  //for(int i = 0; i < n; i++){
 
   lgm = (CENTROS_MASA_MAX + CENTROS_MASA_MIN)*0.5f;
+  //lgm = (float)i*(15.5 - 9.0)/(float)(n-1) + 9.0;
+
 
   /*** radio virial esferico ***/
   rvir = log10(4.0f/3.0f*PI_CUDA*DELTAV*RHOCRIT);
   rvir = (lgm - rvir)/3.0f;
 
 	/*{
-	FILE *pfout;
-	float rr[3],phi,costheta,sintheta;
-	pfout = fopen("salida.dat","w");
-	for(k = 0; k < 1000; k++){
-		r = (RMAX - RMIN)*(float)k/1000. + RMIN;
-    r = pow(10.0f,r);
-    phi      = 2.0f*PI_CUDA*drand48();
-    costheta = 2.0f*drand48()-1.0f;
-		sintheta = sqrtf(1.0f - costheta*costheta);
+	  FILE *pfout;
+	  float rr[3],phi,costheta,sintheta;
+	  pfout = fopen("salida.dat","w");
+	  for(k = 0; k < 1000; k++){
+	  	r = (RMAX - RMIN)*(float)k/1000. + RMIN;
+      r = pow(10.0f,r);
+      phi      = 2.0f*PI_CUDA*drand48();
+      costheta = 2.0f*drand48()-1.0f;
+	  	sintheta = sqrtf(1.0f - costheta*costheta);
 
-    rr[0] = r*sintheta*cosf(phi);
-    rr[1] = r*sintheta*sinf(phi);
-    rr[2] = r*costheta;
+      rr[0] = r*sintheta*cosf(phi);
+      rr[1] = r*sintheta*sinf(phi);
+      rr[2] = r*costheta;
 
-		fprintf(pfout,"%f %f\n",r,u(rr,1.0f,1.0f,lgm,100.0f));
-	}
-	fclose(pfout);
+	  	fprintf(pfout,"%f %f\n",r,u(rr,1.0f,1.0f,lgm,100.0f));
+	  }
+	  fclose(pfout);
 	}*/
 
   rmin = -4.0f;
-  rmax = rvir - 0.2f;
-  printf("rvir: %f rmin: %f rmax: %f\n",rvir,rmin,rmax);
-
+  rmax = rvir;
   rvir = powf(10.0f,rvir);
-  printf("Log10(masa): %f Rvir: %f\n",lgm,rvir);
+  printf("Log10(masa): %f Rvir: %f rmin: %f rmax: %f\n",lgm,rvir,rmin,rmax);
 
   integra_perfil<<<dimGrid,dimBlock>>>(rmin,rmax,lgm,devStates);
   cudaThreadSynchronize();
@@ -921,6 +979,9 @@ __inline__ float normalizacion_perfil(dim3 dimGrid, dim3 dimBlock, curandState *
 
   r *= volumen;
   s *= volumen;
+
+  //fprintf(pfout,"%f %f\n",lgm,r);
+  //}
 
   /*Imprime en file de salida*/
   fprintf(stdout,"Normalizacion perfil: %e +/- %e\n",r,s);

@@ -11,23 +11,16 @@
 
 #include "HandleError.cu"
 
-#ifdef DELTAS
-#define ANCHO 0.01f
-#define ALTURA_DELTA 2500.0f  //1/(2*ANCHO)/(2*ANCHO)
-#endif
-
-#define SIGMA    0.5f
-#define SIGMA3 0.125f
-
-#define BMAX 0.5f     
-#define BMAX_YZ 0.3f  
+#define SIGMA   0.50000f
+#define SIGMA2  0.25000f
+#define SIGMA3  0.12500f
 
 #ifndef ANGULO
 #define ANGULO 45
 #endif
 
-#define TRACERS_MASA_MIN 8.0f
-#define TRACERS_MASA_MAX 16.0f
+#define TRACERS_MASA_MIN 9.0f
+#define TRACERS_MASA_MAX 15.5f
 
 /*Cantidad total de hilos (RNG) que se van a tirar*/
 #define RNGS 65536
@@ -58,8 +51,16 @@
 
 /*Cantidad de pasos en cada direccion*/
 #define NPASOS   100
-#define PASOMIN -2.0
-#define PASOMAX  2.0
+#define PASOMIN -1.00
+#define PASOMAX  1.85
+
+#undef NPASOS
+#define NPASOS   25
+float h_radio_vector[NPASOS] = {1.1399923e-01,1.4815143e-01,1.9253504e-01,2.5021520e-01,3.2517537e-01,
+                                4.2259231e-01,5.4919362e-01,7.1372253e-01,9.2754149e-01,1.2054168e+00,
+                                1.5665389e+00,2.0358467e+00,2.6457512e+00,3.4383726e+00,4.4684496e+00,
+                                5.8071198e+00,7.5468326e+00,9.8077326e+00,1.2745960e+01,1.6564426e+01,
+                                2.1526846e+01,2.7975912e+01,3.6357018e+01,4.7248943e+01,6.1403919e+01}
 
 /*Vectores integral y sigma, host version*/
 float h_int[RNGS/THREADS_PER_BLOCK];
@@ -113,18 +114,18 @@ __constant__ float d_xmax[NDIM];
 #include "common_functions.cu"
 #include "funciones.cu"
 
-/*Kernel: toma un punto aleatorio en el espacio N-Dimensional
-          y evalua la funcion integrando (T1h, T2h) en dicho punto.
-          La evaluacion se guarda en d_int y el cuadrado en d_sig.
-          Al final guarda el estado del RNG en state*/
+  /*Kernel: toma un punto aleatorio en el espacio N-Dimensional
+  y evalua la funcion integrando (T1h, T2h) en dicho punto.
+  La evaluacion se guarda en d_int y el cuadrado en d_sig.
+  Al final guarda el estado del RNG en state*/
 __global__ void integra(curandState *state, float r, int eje){
   const unsigned int tid = threadIdx.x + blockIdx.x * THREADS_PER_BLOCK;
 
   /*Estado del RNG*/
-  curandState xx = state[tid];
+  curandState seed = state[tid];
 
   const unsigned int it = threadIdx.x;
-  int   i,j,k;
+  int   i,j;
   float x[NDIM];
   float p[3];
   double value, sigma, tmp;
@@ -142,13 +143,12 @@ __global__ void integra(curandState *state, float r, int eje){
   /*Esperan hasta que todos terminen*/
   __syncthreads();
 
-  /*Tira un numero random x de dimension NDIM*/
   value = 0.0; sigma = 0.0;
   for(j = 0; j < LAZOS; j++){
-    k = 1;
-    while(k != 0){
-      x[NDIM-2] = dx[NDIM-2] * curand_uniform(&xx) + xmin[NDIM-2];
-      x[NDIM-1] = dx[NDIM-1] * curand_uniform(&xx) + xmin[NDIM-1];
+    /*Tira un numero random x de dimension NDIM*/
+    do{
+      x[NDIM-2] = dx[NDIM-2] * curand_uniform(&seed) + xmin[NDIM-2]; /*cos(theta)*/
+      x[NDIM-1] = dx[NDIM-1] * curand_uniform(&seed) + xmin[NDIM-1]; /*phi*/
 
       if(eje == 2){ 
         p[2] = r*x[NDIM-2];
@@ -166,16 +166,20 @@ __global__ void integra(curandState *state, float r, int eje){
         p[1] = r*sqrtf(1.0f - x[NDIM-2]*x[NDIM-2])*cos(x[NDIM-1]);
       }
 
+
 #ifdef DOSH
       for(i = 0; i < 6; i++)
-        x[i] = dx[i] * curand_uniform(&xx) + xmin[i];
+        x[i] = dx[i] * curand_uniform(&seed) + xmin[i];
       
-      x[6] = curand_normal(&xx);
-      x[7] = curand_normal(&xx);
-      x[8] = curand_normal(&xx);
+      /*Posicion del halo vecino respecto del punto p*/
+      x[6] = curand_normal(&seed);
+      x[7] = curand_normal(&seed);
+      x[8] = curand_normal(&seed);
 
       tmp = x[6]*x[6] + x[7]*x[7] + x[8]*x[8];
-      if(tmp < 1.E-4){
+      if(tmp < 1.E-4){ 
+        /*Esto es para evitar que el halo vecino caiga muy cerca
+        del punto p, si cae muy cerca la densidad revienta*/
         tmp = 1.0E-2/sqrt(tmp);
         x[6] *= tmp;
         x[7] *= tmp;
@@ -184,7 +188,7 @@ __global__ void integra(curandState *state, float r, int eje){
       }
 
       for(i = 9; i < NDIM-2; i++)
-        x[i] = dx[i] * curand_uniform(&xx) + xmin[i];
+        x[i] = dx[i] * curand_uniform(&seed) + xmin[i];
 
       x[6] *= SIGMA;
       x[7] *= SIGMA;
@@ -195,12 +199,12 @@ __global__ void integra(curandState *state, float r, int eje){
       tmp *= T2h(p,x);
 #else 
       for(i = 0; i < NDIM-2; i++)
-        x[i] = dx[i] * curand_uniform(&xx) + xmin[i];
+        x[i] = dx[i] * curand_uniform(&seed) + xmin[i];
 
       tmp = T1h(p,x);
 #endif
-      k = (isnan(tmp) + isinf(tmp));
-    }
+      if(isfinite(tmp))break;
+    }while(1);
 
     value += tmp;
     sigma += tmp*tmp;
@@ -210,8 +214,10 @@ __global__ void integra(curandState *state, float r, int eje){
   s_value[it] = value;
   s_sigma[it] = sigma;
 
+  /*Esperan hasta que todos terminen*/
   __syncthreads();
 
+  /*Thread 0 colecta los resultados del bloque y guarda en la memoria global*/
   if(it == 0){
     value = 0.0f; sigma = 0.0f;
     for(i = 0; i < THREADS_PER_BLOCK; i++){
@@ -219,13 +225,14 @@ __global__ void integra(curandState *state, float r, int eje){
       sigma += s_sigma[i];
     }
     j = blockIdx.x;
-    /*Suma a la memoria global*/
+
+    /*Guarda en la memoria global*/
     d_int[j] = value;
     d_sig[j] = sigma;
   }
 
   /*Guarda el estado del RNG*/
-  state[tid] = xx;
+  state[tid] = seed;
 }
 
 __global__ void suma(void){
@@ -281,8 +288,7 @@ int main(int argc, char **argv){
   float r,s;
   float volumen;
   float h_radio;
-  //float *d_radio;
-  //int   *d_eje;
+
   curandState *devStates;
 
   elapsed = 0.0f;
@@ -304,9 +310,6 @@ int main(int argc, char **argv){
   cudaGetDeviceProperties(&devProp, DEVICE);
   printDevProp(devProp);
 
-  //HANDLE_ERROR(cudaMalloc((void **)&d_radio,sizeof(float)));
-  //HANDLE_ERROR(cudaMalloc((void **)&d_eje,sizeof(int)));
-  
   /*Chequea Cantidad de Threads y de Blocks*/
   assert(THREADS_PER_BLOCK <= 1024);
   assert(RNGS%THREADS_PER_BLOCK == 0); // should be divisible by blocks
@@ -316,7 +319,7 @@ int main(int argc, char **argv){
   dim3 dimGrid(RNGS/THREADS_PER_BLOCK,1,1);
 
   fprintf(stdout,"Corriendo %d Blocks con %d threads cada uno\n",
-                                RNGS/THREADS_PER_BLOCK,THREADS_PER_BLOCK);
+                        RNGS/THREADS_PER_BLOCK,THREADS_PER_BLOCK);
 
   /*Allocatea memoria para el RNG*/
   HANDLE_ERROR(cudaMalloc((void **)&devStates,RNGS*sizeof(curandState)));
@@ -334,58 +337,48 @@ int main(int argc, char **argv){
   float Numin   = Nu_M(CENTROS_MASA_MIN);
   float Numax   = Nu_M(CENTROS_MASA_MAX);
   float ncmedio = nc_medio(Numin,Numax,dimGrid,dimBlock,devStates);
+  /*FUNCION DE MASA FIT*/
   //float ncmedio = nc_medio(CENTROS_MASA_MIN,CENTROS_MASA_MAX,dimGrid,dimBlock,devStates);
 
 #ifdef CG 
   Numin   = Nu_M(TRACERS_MASA_MIN);
   Numax   = Nu_M(TRACERS_MASA_MAX);
-  //float ngmedio = ng_medio(TRACERS_MASA_MIN,TRACERS_MASA_MAX,dimGrid,dimBlock,devStates);
   float ngmedio = ng_medio(Numin,Numax,dimGrid,dimBlock,devStates);
+  /*FUNCION DE MASA FIT*/
+  //float ngmedio = ng_medio(TRACERS_MASA_MIN,TRACERS_MASA_MAX,dimGrid,dimBlock,devStates);
 #endif
 
   /*Chequea si la integral del perfil hasta el radio virial da 1*/
-  //normalizacion_perfil(dimGrid,dimBlock,devStates);
+#ifndef DOSH
+  //float norma_perfil = normalizacion_perfil(dimGrid,dimBlock,devStates);
+#endif
   
-  prueba_ng_medio();
+  //prueba_ng_medio();
 
   /*Verifica que la integral de bias(nu)*f(nu) de 1*/
-  prueba_bias_f(dimGrid,dimBlock,devStates);
+  //prueba_bias_f(dimGrid,dimBlock,devStates);
 
   /*Calcula la normalizacion de la funcion de masa*/
-  normalizacion_func_masa(dimGrid,dimBlock,devStates);
+  //normalizacion_func_masa(dimGrid,dimBlock,devStates);
 
   /*Setea los limites de integracion*/
   /*Halo Centro*/
   h_xmin[0] = (float)CENTROS_MASA_MIN; /*Masa minima*/
   h_xmax[0] = (float)CENTROS_MASA_MAX; /*Masa maxima*/
   /*Forma*/
-  h_xmin[1] = 0.10f; /* ab minimo */
+  h_xmin[1] = 0.00f; /* ab minimo */
   h_xmax[1] = 1.00f; /* ab maximo */
-  h_xmin[2] = 0.10f; /* bc minimo */
+  h_xmin[2] = 0.00f; /* bc minimo */
   h_xmax[2] = 1.00f; /* bc maximo */
-
-#ifdef DELTAS
-  h_xmin[1] = ABMEDIO - ANCHO; /* ab minimo */
-  h_xmax[1] = ABMEDIO + ANCHO; /* ab maximo */
-  h_xmin[2] = BCMEDIO - ANCHO; /* bc minimo */
-  h_xmax[2] = BCMEDIO + ANCHO; /* bc maximo */
-#endif
 
 #ifdef DOSH
   /*Halo Vecino*/
   h_xmin[3] = (float)TRACERS_MASA_MIN; /*Masa minima*/
   h_xmax[3] = (float)TRACERS_MASA_MAX; /*Masa maxima*/
-  h_xmin[4] = 0.10f; /* ab minimo */
+  h_xmin[4] = 0.00f; /* ab minimo */
   h_xmax[4] = 1.00f; /* ab maximo */
-  h_xmin[5] = 0.10f; /* bc minimo */
+  h_xmin[5] = 0.00f; /* bc minimo */
   h_xmax[5] = 1.00f; /* bc maximo */
-
-#ifdef DELTAS
-  h_xmin[4] = ABMEDIO - ANCHO; /* ab minimo */
-  h_xmax[4] = ABMEDIO + ANCHO; /* ab maximo */
-  h_xmin[5] = BCMEDIO - ANCHO; /* bc minimo */
-  h_xmax[5] = BCMEDIO + ANCHO; /* bc maximo */
-#endif
 
   /*Volumen*/
   //h_xmin[6] = -RANGO; 
@@ -396,11 +389,11 @@ int main(int argc, char **argv){
   //h_xmax[8] = +RANGO;
 
   /*Orientacion del halo vecino*/
-  h_xmin[9]  =  0.0f;
+  h_xmin[9]  = -M_PI;
   h_xmax[9]  =  M_PI;
-  h_xmin[10] =  0.0f;
-  h_xmax[10] =  1.0f;
-  h_xmin[11] =  0.0f;
+  h_xmin[10] = -M_PI*0.5;
+  h_xmax[10] =  M_PI*0.5;
+  h_xmin[11] = -M_PI;
   h_xmax[11] =  M_PI;
 #endif
 
@@ -424,7 +417,7 @@ int main(int argc, char **argv){
   volumen = 1.0f;
 #ifdef DOSH
   /* PARA UTILIZAR RANDOM GAUSSIANO EN 6,7,8 */
-  for(i = 0; i < 6 ; i++){
+  for(i = 0; i <= 5 ; i++){
     printf("---- %d %f\n",i,(h_xmax[i] - h_xmin[i]));
     volumen *= (h_xmax[i] - h_xmin[i]);
   }
@@ -445,7 +438,7 @@ int main(int argc, char **argv){
   printf("Memoria CUDA Total: %8.3lf Mb Used: %8.3lf Mb free: %8.3lf Mb \n",
          (float)memtot/1024.0f/1024.0f,(float)(memtot-memfree)/1024.0f/1024.0f,
          (float)memfree/1024.0f/1024.0f);
-  
+
   /*Imprime alguna informacion*/
   printf("--------------------------\n");
   printf("  Volumen:  %E\n",volumen);
@@ -454,6 +447,7 @@ int main(int argc, char **argv){
 #ifdef CG
   printf("  NGMEDIO: %E\n",ngmedio);
 #endif
+  printf("  NormaForma: %E\n",norma_merchan);
 #ifdef DOSH
   printf("  NormaAlign: %E\n",norma_align);
 #endif
@@ -477,22 +471,16 @@ int main(int argc, char **argv){
       /*Setea posicion en la direccion dada*/
       h_radio = dpaso*(float)(i) + PASOMIN;
       h_radio = powf(10.0f,h_radio);
-
-      /*Copia posicion al device*/
-      //HANDLE_ERROR(cudaMemcpy(d_radio,&h_radio,sizeof(float),cudaMemcpyHostToDevice));
-      //HANDLE_ERROR(cudaMemcpy(d_eje,&j,sizeof(int),cudaMemcpyHostToDevice));
+      h_radio = h_radio_vector[i];
 
       /*Lanza kernel*/
       integra<<<dimGrid,dimBlock>>>(devStates,h_radio,j);
       cudaThreadSynchronize();
-
-      //suma<<<dimGrid,dimBlock>>>();
-      //cudaThreadSynchronize();
       /*Termina kernel*/
 
       CHECK_KERNEL_SUCCESS();
 
-      ////*Copia sumatorias al host y termina de reducir en el host*/
+      /*Copia sumatorias al host y termina de reducir en el host*/
       HANDLE_ERROR(cudaMemcpyFromSymbol(h_int,d_int,(RNGS/THREADS_PER_BLOCK)*sizeof(float)));
       HANDLE_ERROR(cudaMemcpyFromSymbol(h_sig,d_sig,(RNGS/THREADS_PER_BLOCK)*sizeof(float)));
 
@@ -504,15 +492,13 @@ int main(int argc, char **argv){
         s += h_sig[l];
       }
 
-      //HANDLE_ERROR(cudaMemcpyFromSymbol(&r,d_integral,sizeof(float)));
-      //HANDLE_ERROR(cudaMemcpyFromSymbol(&s,d_sigma,sizeof(float)));
-
       /*Estima la integral y el sigma*/
       r /= (float)((long)RNGS*(long)LAZOS);
       s /= (float)((long)RNGS*(long)LAZOS);
       s -= (r*r);
       s /= (float)((long)RNGS*(long)LAZOS);
       s  = sqrt(s);
+
       s *= volumen;
       r *= volumen;
 
@@ -521,6 +507,11 @@ int main(int argc, char **argv){
 
       r /= norma_merchan;
       s /= norma_merchan;
+
+#ifndef DOSH
+      //r /= norma_perfil;
+      //s /= norma_perfil;
+#endif
 
 #ifdef DOSH
       r /= norma_align;
@@ -533,6 +524,7 @@ int main(int argc, char **argv){
 			r /= ngmedio;
 			s /= ngmedio;
 #endif
+
       /*Imprime en file de salida*/
       fprintf(pfout,"%e %e %e\n",h_radio,r,s);
     }
