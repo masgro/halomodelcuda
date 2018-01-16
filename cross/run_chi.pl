@@ -3,7 +3,7 @@ use strict;
 use warnings;
 use diagnostics;
 
-my $nchi  =   81;
+my $nchi  =    9;
 my $bcmin = 0.20;
 my $bcmax = 1.00;
 my $abmin = 0.20;
@@ -32,7 +32,7 @@ for(my $i = 0; $i < $nchi; $i++) {
 		my $align_b = "1.000";
 		my $align_c = "1.000";
 
-  	my $cmd = "hm.cono $abmedio $bcmedio $align_b $align_c";
+  	my $cmd = "hm.cono.x $abmedio $bcmedio $align_b $align_c";
   	system($cmd);
 
   	$cmd = "reescribe.x $nrun $abmedio $bcmedio $align_b $align_c";
@@ -45,7 +45,7 @@ for(my $i = 0; $i < $nchi; $i++) {
 
 #die("Stopping...");
 
-$nchi  =   81;
+$nchi  =    9;
 $bcmin = 0.20;
 $bcmax = 1.00;
 $abmin = 0.20;
@@ -72,7 +72,7 @@ for(my $i = 0; $i < $nchi; $i++) {
     my $bcmedio = "1.000";
     my $abmedio = "1.000";
 
-  	my $cmd = "hm.cono.2h $abmedio $bcmedio $align_b $align_c";
+  	my $cmd = "hm.cono.2h.x $abmedio $bcmedio $align_b $align_c";
   	system($cmd);
 
   	$cmd = "reescribe.2h.x $nrun $abmedio $bcmedio $align_b $align_c";

@@ -8,15 +8,15 @@ OPTIONS += -DTAO_II
 
 ifeq ($(term),2h)
   OPTIONS += -DDOSH
-	BIN1 = hm.cono.2h
+	BIN1 = hm.cono.2h.x
 	BIN2 = reescribe.2h.x
 else
-	BIN1 = hm.cono
+	BIN1 = hm.cono.x
 	BIN2 = reescribe.x
 endif
 
-OPTIONS += -DCENTROS_MASA_MIN=12.23
-OPTIONS += -DCENTROS_MASA_MAX=13.72
+OPTIONS += -DCENTROS_MASA_MIN=14.14
+OPTIONS += -DCENTROS_MASA_MAX=15.34
 OPTIONS += -DANGULO=90
 OPTIONS += -DMAG=19
 
@@ -61,4 +61,4 @@ reescribe.x: reescribe.o $(MAKEFILE)
 	gcc $(OPTIONS) reescribe.o -lgsl -lgslcblas -lm -o $(BIN2)
 
 clean:
-	rm -f $(BIN1) $(BIN2) *.o
+	rm -f *.o
