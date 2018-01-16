@@ -8,70 +8,37 @@ OPTIONS += -DTAO_II
 
 ifeq ($(term),2h)
   OPTIONS += -DDOSH
-endif
-
-ifndef bcmedio
-OPTIONS += -DBCMEDIO=0.8
+	BIN1 = hm.cono.2h
+	BIN2 = reescribe.2h.x
 else
-OPTIONS += -DBCMEDIO=$(bcmedio)
+	BIN1 = hm.cono
+	BIN2 = reescribe.x
 endif
 
-ifndef abmedio
-OPTIONS += -DABMEDIO=0.7
-else
-OPTIONS += -DABMEDIO=$(abmedio)
-endif
-
-ifndef align_b
-OPTIONS += -DALIGN_B=0.3
-else
-OPTIONS += -DALIGN_B=$(align_b)
-endif
-
-ifndef align_c
-OPTIONS += -DALIGN_C=0.5
-else
-OPTIONS += -DALIGN_C=$(align_c)
-endif
-
-ifndef m1
-OPTIONS += -DCENTROS_MASA_MIN=12.0
-else
-OPTIONS += -DCENTROS_MASA_MIN=$(m1)
-endif
-
-ifndef m2
-OPTIONS += -DCENTROS_MASA_MAX=12.5
-else
-OPTIONS += -DCENTROS_MASA_MAX=$(m2)
-endif
-
-ifndef angulo
-OPTIONS += -DANGULO=45
-else
-OPTIONS += -DANGULO=$(angulo)
-endif
-
-ifndef mag
+OPTIONS += -DCENTROS_MASA_MIN=12.23
+OPTIONS += -DCENTROS_MASA_MAX=13.72
+OPTIONS += -DANGULO=90
 OPTIONS += -DMAG=19
-else
-OPTIONS += -DMAG=$(mag)
-endif
 
 # Flags
 CFLAGS = -O3 --use_fast_math #--ptxas-options=-v
 LDFLAGS = -lcudart -lgomp -lgsl -lgslcblas -lm
 
 MACHINE=$(shell hostname)
-CFLAGS += -arch=sm_20
 
 # Compilers
 CC = nvcc
 LINKER = nvcc
 
+ifeq ($(MACHINE),mendieta)
+OPTIONS += -DDEVICE=0
+LDFLAGS  = -lcuda -lcudart -lgomp -lgsl -lgslcblas -lm
+CFLAGS  += -arch=sm_35
+endif
+
 # Files
 MAKEFILE = Makefile
-C_SOURCES = $(BIN).cu
+C_SOURCES = hm.cono.cu
 HEADERS =
 C_OBJS = $(patsubst %.cu, %.o,$(C_SOURCES))
 
@@ -79,7 +46,7 @@ todo: $(BIN) reescribe.x
 
 # Rules
 $(BIN): $(C_OBJS) $(HEADERS) $(MAKEFILE)
-	$(LINKER) $(C_OBJS) $(LDFLAGS) $(INCLUDES) $(LIBS) -o $(BIN)
+	$(LINKER) $(C_OBJS) $(LDFLAGS) $(INCLUDES) $(LIBS) -o $(BIN1)
 
 $(C_OBJS): $(C_SOURCES) $(HEADERS) $(MAKEFILE)
 	$(CC) $(OPTIONS) -c $(C_SOURCES) $(CFLAGS) $(INCLUDES)
@@ -87,8 +54,11 @@ $(C_OBJS): $(C_SOURCES) $(HEADERS) $(MAKEFILE)
 ngmedio.x: ngmedio.cu $(HEADERS) $(MAKEFILE)
 	$(LINKER) $(OPTIONS) $< $(LDFLAGS) $(INCLUDES) $(LIBS) -o $@
 
-reescribe.x: reescribe.c $(MAKEFILE)
-	gcc $(OPTIONS) -o $@ reescribe.c -lgsl -lgslcblas -lm
+reescribe.o: reescribe.c $(MAKEFILE)
+	gcc $(OPTIONS) reescribe.c -c
+
+reescribe.x: reescribe.o $(MAKEFILE)
+	gcc $(OPTIONS) reescribe.o -lgsl -lgslcblas -lm -o $(BIN2)
 
 clean:
-	rm -f $(BIN) reescribe.x *.o
+	rm -f $(BIN1) $(BIN2) *.o

@@ -60,7 +60,7 @@ float h_radio_vector[NPASOS] = {1.1399923e-01,1.4815143e-01,1.9253504e-01,2.5021
                                 4.2259231e-01,5.4919362e-01,7.1372253e-01,9.2754149e-01,1.2054168e+00,
                                 1.5665389e+00,2.0358467e+00,2.6457512e+00,3.4383726e+00,4.4684496e+00,
                                 5.8071198e+00,7.5468326e+00,9.8077326e+00,1.2745960e+01,1.6564426e+01,
-                                2.1526846e+01,2.7975912e+01,3.6357018e+01,4.7248943e+01,6.1403919e+01}
+                                2.1526846e+01,2.7975912e+01,3.6357018e+01,4.7248943e+01,6.1403919e+01};
 
 /*Vectores integral y sigma, host version*/
 float h_int[RNGS/THREADS_PER_BLOCK];
@@ -70,6 +70,12 @@ float h_sig[RNGS/THREADS_PER_BLOCK];
 __device__ float d_int[RNGS/THREADS_PER_BLOCK];
 __device__ float d_sig[RNGS/THREADS_PER_BLOCK];
 __device__ float d_integral[1],d_sigma[1];
+
+/*Parametros forma y alineacion*/
+float h_abmedio, h_bcmedio;
+float h_align_b, h_align_c;
+__device__ float d_abmedio, d_bcmedio;
+__device__ float d_align_b, d_align_c;
 
 /*Coeficientes de la forma y normalizacion, host version*/
 float h_bc[4][3];
@@ -168,40 +174,40 @@ __global__ void integra(curandState *state, float r, int eje){
 
 
 #ifdef DOSH
-      for(i = 0; i < 6; i++)
-        x[i] = dx[i] * curand_uniform(&seed) + xmin[i];
-      
-      /*Posicion del halo vecino respecto del punto p*/
-      x[6] = curand_normal(&seed);
-      x[7] = curand_normal(&seed);
-      x[8] = curand_normal(&seed);
+      	for(i = 0; i < 6; i++)
+      	  x[i] = dx[i] * curand_uniform(&seed) + xmin[i];
+      	
+      	/*Posicion del halo vecino respecto del punto p*/
+      	x[6] = curand_normal(&seed);
+      	x[7] = curand_normal(&seed);
+      	x[8] = curand_normal(&seed);
 
-      tmp = x[6]*x[6] + x[7]*x[7] + x[8]*x[8];
-      if(tmp < 1.E-4){ 
-        /*Esto es para evitar que el halo vecino caiga muy cerca
-        del punto p, si cae muy cerca la densidad revienta*/
-        tmp = 1.0E-2/sqrt(tmp);
-        x[6] *= tmp;
-        x[7] *= tmp;
-        x[8] *= tmp;
-        tmp = 1.0E-4;
-      }
+      	tmp = x[6]*x[6] + x[7]*x[7] + x[8]*x[8];
+      	if(tmp < 1.E-4){ 
+      	  /*Esto es para evitar que el halo vecino caiga muy cerca
+      	  del punto p, si cae muy cerca la densidad revienta*/
+      	  tmp = 1.0E-2/sqrt(tmp);
+      	  x[6] *= tmp;
+      	  x[7] *= tmp;
+      	  x[8] *= tmp;
+      	  tmp = 1.0E-4;
+      	}
 
-      for(i = 9; i < NDIM-2; i++)
-        x[i] = dx[i] * curand_uniform(&seed) + xmin[i];
+      	for(i = 9; i < NDIM-2; i++)
+      	  x[i] = dx[i] * curand_uniform(&seed) + xmin[i];
 
-      x[6] *= SIGMA;
-      x[7] *= SIGMA;
-      x[8] *= SIGMA;
+      	x[6] *= SIGMA;
+      	x[7] *= SIGMA;
+      	x[8] *= SIGMA;
 
-      /*sqrt(2·pi)^3 sigma^3 / exp(-tmp/2)*/
-      tmp  = SQRT_TWOPI_CUBO_CUDA*SIGMA3*exp(tmp*0.5f);
-      tmp *= T2h(p,x);
-#else 
-      for(i = 0; i < NDIM-2; i++)
-        x[i] = dx[i] * curand_uniform(&seed) + xmin[i];
+      	/*sqrt(2·pi)^3 sigma^3 / exp(-tmp/2)*/
+      	tmp  = SQRT_TWOPI_CUBO_CUDA*SIGMA3*exp(tmp*0.5f);
+      	tmp *= T2h(p,x);
+#else
+      	for(i = 0; i < NDIM-2; i++)
+      	  x[i] = dx[i] * curand_uniform(&seed) + xmin[i];
 
-      tmp = T1h(p,x);
+      	tmp = T1h(p,x);
 #endif
       if(isfinite(tmp))break;
     }while(1);
@@ -279,6 +285,26 @@ int setseed(void){
   return seed;
 }
 
+void set_variables(int argc, char **argv){
+
+	if(argc < 5){
+		printf("Usage: %s ABMEDIO BCMEDIO ALGN_C ALGN_B\n",argv[0]);
+		exit(EXIT_FAILURE);
+	}
+
+	h_abmedio = atof(argv[1]);
+	h_bcmedio = atof(argv[2]);
+	h_align_b = atof(argv[3]);
+	h_align_c = atof(argv[4]);
+
+	printf("%.02f %.02f %.02f %.02f\n",h_abmedio,h_bcmedio,h_align_b,h_align_c);
+
+  HANDLE_ERROR(cudaMemcpyToSymbol(d_abmedio,&h_abmedio,sizeof(float)));
+  HANDLE_ERROR(cudaMemcpyToSymbol(d_bcmedio,&h_bcmedio,sizeof(float)));
+  HANDLE_ERROR(cudaMemcpyToSymbol(d_align_b,&h_align_b,sizeof(float)));
+  HANDLE_ERROR(cudaMemcpyToSymbol(d_align_c,&h_align_c,sizeof(float)));
+}
+
 int main(int argc, char **argv){
   double time,elapsed;
   FILE  *pfout;
@@ -291,10 +317,14 @@ int main(int argc, char **argv){
 
   curandState *devStates;
 
+	set_variables(argc,argv);
+
   elapsed = 0.0f;
   chrono(START,&time);
 
   run = (argc > 1)? atoi(argv[1]) : 0;
+
+	run = 0;
 
 #ifdef DOSH
   sprintf(term,"2h");

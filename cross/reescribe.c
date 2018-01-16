@@ -137,12 +137,13 @@ int main(int argc, char **argv)
   }
 #endif
 
-  //sprintf(filename,"outputs/funcorr_%s_%.2f-%.2f_%02d_%.2f_%.2f_%.2f_%.2f_%2d.%s.%02d",
-  //                  term,CENTROS_MASA_MIN,CENTROS_MASA_MAX,ANGULO,
-  //                  BCMEDIO,ABMEDIO,ALIGN_B,ALIGN_C,MAG,kind,NUM);
+	float abmedio = atof(argv[2]);
+	float bcmedio = atof(argv[3]);
+	float align_b = atof(argv[4]);
+	float align_c = atof(argv[5]);
   sprintf(filename,"outputs/funcorr_%s_%.2f-%.2f_%02d_%.2f_%.2f_%.2f_%.2f_%2d.%s.dat",
                     term,CENTROS_MASA_MIN,CENTROS_MASA_MAX,ANGULO,
-                    BCMEDIO,ABMEDIO,ALIGN_B,ALIGN_C,MAG,kind);
+                    bcmedio,abmedio,align_b,align_c,MAG,kind);
   pfout = fopen(filename,"w");
   assert(pfout != NULL);
   for(k = 0; k < nlines; k++)

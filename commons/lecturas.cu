@@ -1,11 +1,11 @@
-__constant__ float  d_coef_nu_m[7];
-__constant__ int  d_coef_nu_m_n;
-__constant__ float  d_coef_dlognu_dlogm[6];
-__constant__ int  d_coef_dlognu_dlogm_n;
-__constant__ float  d_coef_m_nu[7];
-__constant__ int  d_coef_m_nu_n;
-__constant__ float  d_coef_xilin[7];
-__constant__ int  d_coef_xilin_n;
+__device__ float  d_coef_nu_m[7];
+__device__ int  d_coef_nu_m_n;
+__device__ float  d_coef_dlognu_dlogm[6];
+__device__ int  d_coef_dlognu_dlogm_n;
+__device__ float  d_coef_m_nu[7];
+__device__ int  d_coef_m_nu_n;
+__device__ float  d_coef_xilin[7];
+__device__ int  d_coef_xilin_n;
 
 float *h_coef_nu_m;
 int    h_coef_nu_m_n;
@@ -15,7 +15,6 @@ float *h_coef_m_nu;
 int    h_coef_m_nu_n;
 float *h_coef_xilin;
 int    h_coef_xilin_n;
-
 
 __inline__ void lee_ajustes_alineamiento(void)
 {

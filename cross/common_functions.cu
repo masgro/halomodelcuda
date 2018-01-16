@@ -83,12 +83,10 @@ __device__ float forma(float bc, float ab){
   float m1bc,m2bc;
   float m1ab,m2ab;
 
-  m1bc = BCMEDIO; m2bc = 0.1f; //sigma
-  //m1bc = d_bcmedio; m2bc = 0.1f; //sigma
+  m1bc = d_bcmedio; m2bc = 0.1f; //sigma
   dbc  = db_gauss(bc,m1bc,m2bc)*(1.0f-bc)*bc;
 
-  m1ab = ABMEDIO; m2ab = 0.1f;  //sigma
-  //m1ab = d_abmedio; m2ab = 0.1f;  //sigma
+  m1ab = d_abmedio; m2ab = 0.1f;  //sigma
   dab  = db_gauss(ab,m1ab,m2ab)*(1.0f-ab)*ab;
 
   prob = dab*dbc;
@@ -284,9 +282,9 @@ __host__ __device__ float n(float lgm){
 __device__ float align(float theta, float phi){
   float p;
 #ifndef NEW_ALIGN
-  p = ALIGN_C*expf(-(theta - PI_CUDA*0.5f)*(theta - PI_CUDA*0.5f)*0.5f/(ALIGN_B*ALIGN_B));
-  p *= expf(-phi*phi*0.5f/(ALIGN_B*ALIGN_B));
-  p += expf(-theta*theta*0.5f/(ALIGN_B*ALIGN_B));
+  p = d_align_c*expf(-(theta - PI_CUDA*0.5f)*(theta - PI_CUDA*0.5f)*0.5f/(d_align_b*d_align_b));
+  p *= expf(-phi*phi*0.5f/(d_align_b*d_align_b));
+  p += expf(-theta*theta*0.5f/(d_align_b*d_align_b));
 #endif
 
 #ifdef NEW_ALIGN
@@ -864,7 +862,7 @@ __global__ void integra_perfil(float rmin, float rmax, float lgm, curandState *s
     r[1] = rr*sintheta*sinf(phi);
     r[2] = rr*costheta;
 
-    tmp = u(r,ABMEDIO,BCMEDIO,lgm,1.0f)*rr*rr*rr*LOGE10;
+    tmp = u(r,d_abmedio,d_bcmedio,lgm,1.0f)*rr*rr*rr*LOGE10;
     //tmp = u_esferico(r,lgm,1.0f)*powf(rr,3.0f)*LOGE10;
 
     //r[0] = (curand_uniform(&seed)*(rmax - rmin) + rmin);
