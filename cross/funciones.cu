@@ -68,7 +68,7 @@ __device__ float T2h(float *r, float *x){
 
   rotate(y,x[9],x[10],x[11],yy);
 
-  //tmp  = u_esferico(yy,lgm2,sqrtf(r[0]*r[0]+r[1]*r[1]+r[2]*r[2]));
+  //tmp  = u_esferico(y,lgm2,sqrtf(r[0]*r[0]+r[1]*r[1]+r[2]*r[2]));
   tmp  = u(yy,bc2,ab2,lgm2,sqrtf(r[0]*r[0]+r[1]*r[1]+r[2]*r[2]));
   tmp *= (RHOMEDIO/m1);
   #ifdef CG
@@ -80,7 +80,7 @@ __device__ float T2h(float *r, float *x){
   //tmp *= n(lgm2)*m2*m2/RHOMEDIO;
   tmp *= forma(bc2,ab2);
   tmp *= NORMA_ORIENTACION_CROSS; //factor para normalizar la func. de probabilidad de
-                                    //orientacion del halo vecino.
+                                  //orientacion del halo vecino.
   tmp *= f_nu(nu1)*nu1*dlogNu_dlogM(lgm1)*FMNORM;
   /*FUNCION DE MASA FIT*/
   //tmp *= n(lgm1)*m1*m1/RHOMEDIO;

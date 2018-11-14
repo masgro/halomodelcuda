@@ -1,7 +1,7 @@
 # Binary file
 BIN = hm.cono
 
-OPTIONS := $(kind)
+OPTIONS := -DCG
 OPTIONS += -DMERCHAN
 #OPTIONS += -DNEW_ALIGN
 OPTIONS += -DTAO_II
@@ -15,9 +15,16 @@ else
 	BIN2 = reescribe.x
 endif
 
-OPTIONS += -DCENTROS_MASA_MIN=14.14
-OPTIONS += -DCENTROS_MASA_MAX=15.34
-OPTIONS += -DANGULO=90
+#OPTIONS += -DCENTROS_MASA_MIN=12.23
+#OPTIONS += -DCENTROS_MASA_MAX=13.72
+
+#OPTIONS += -DCENTROS_MASA_MIN=13.72
+#OPTIONS += -DCENTROS_MASA_MAX=14.14
+
+#OPTIONS += -DCENTROS_MASA_MIN=14.14
+#OPTIONS += -DCENTROS_MASA_MAX=15.34
+
+OPTIONS += -DANGULO=45
 OPTIONS += -DMAG=19
 
 # Flags
@@ -33,7 +40,13 @@ LINKER = nvcc
 ifeq ($(MACHINE),mendieta)
 OPTIONS += -DDEVICE=0
 LDFLAGS  = -lcuda -lcudart -lgomp -lgsl -lgslcblas -lm
-CFLAGS  += -arch=sm_35
+CFLAGS  += -arch=sm_20
+endif
+
+ifeq ($(MACHINE),clemente)
+OPTIONS += -DDEVICE=0
+LDFLAGS  = -lcuda -lcudart -lgomp -lgsl -lgslcblas -lm
+CFLAGS  += -arch=sm_20
 endif
 
 # Files

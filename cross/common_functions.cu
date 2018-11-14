@@ -135,24 +135,24 @@ __host__ __device__ float u(float *r, float bc, float ab, float lgm, float rlim)
   rvir = log10(4.0f/3.0f*PI_CUDA*DELTAV*RHOCRIT);
   rvir = (lgm - rvir)/3.0f;
   rvir = powf(10.0f,rvir);
-  #ifdef DOSH
+  //#ifdef DOSH
   //if(rvir > rlim)return(0.0f);
-  #endif
+  //#endif
   /***************************/
 
   /** ajuste de JS **/
   //#ifdef DOSH
-  //ce = FACTOR_JS*cvir;
+  ce = FACTOR_JS*cvir;
   //#else
-  ce = 0.40*cvir;
+  //ce = 0.40*cvir;
   //#endif
 
   /** como en JS ecuacion 13  smith 59 **/
   prol = 1.0f/((bc*bc)*ab);
   //#ifdef DOSH
-  //Deltae = 5.0f*DELTAV*powf(prol,0.75f);
+  Deltae = 5.0f*DELTAV*powf(prol,0.75f);
   //#else
-  Deltae = 5.0f*DELTAV*powf(prol,0.85f);
+  //Deltae = 5.0f*DELTAV*powf(prol,0.85f);
   //#endif
   dc = (Deltae*ce*ce*ce/3.0f)/(log(1.0f+ce)-ce/(1.0f+ce));
 
@@ -165,7 +165,7 @@ __host__ __device__ float u(float *r, float bc, float ab, float lgm, float rlim)
   rr = sqrtf(rr);
 
   #ifdef DOSH
-  //if(rr > rvir) return(0.0f);
+  if(rr > rvir) return(0.0f);
   #endif
 
   rr  /= rs;
@@ -196,9 +196,9 @@ __host__ __device__ float u_esferico(float *r, float lgm, float rlim){
   rvir = log10(4.0f/3.0f*PI_CUDA*DELTAV*RHOCRIT);
   rvir = (lgm - rvir)/3.0f;
   rvir = powf(10.0f,rvir);
-  #ifdef DOSH
+  //#ifdef DOSH
   //if(rvir > rlim*0.5f)return(0.0f);
-  #endif
+  //#endif
   /*****************************/
   ce = cvir;
   dc = (DELTAV*ce*ce*ce/3.0f)/(log(1.0f+ce)-ce/(1.0f+ce));
@@ -280,16 +280,21 @@ __host__ __device__ float n(float lgm){
 }
 
 __device__ float align(float theta, float phi){
-  float p;
+  float p = 0.0f;
+
 #ifndef NEW_ALIGN
-  p = d_align_c*expf(-(theta - PI_CUDA*0.5f)*(theta - PI_CUDA*0.5f)*0.5f/(d_align_b*d_align_b));
-  p *= expf(-phi*phi*0.5f/(d_align_b*d_align_b));
-  p += expf(-theta*theta*0.5f/(d_align_b*d_align_b));
+	float sigma2 = d_align_b*d_align_b;
+  p = d_align_c*expf(-(theta - PI_CUDA*0.5f)*(theta - PI_CUDA*0.5f)*0.5f/sigma2);
+  p *= expf(-phi*phi*0.5f/sigma2);
+  p += expf(-theta*theta*0.5f/sigma2);
 #endif
 
 #ifdef NEW_ALIGN
-  p  = ALIGN_C*cosf(theta)*cosf(theta);
-  p += (1.-cosf(theta)*cosf(theta))*((1.-ALIGN_B)*cosf(phi)*cosf(phi) + ALIGN_B);
+	float costheta = cosf(theta);
+	float cosphi = cosf(phi);
+	p = 1.0f;
+	p += d_align_b*0.5f*((3.0f*costheta*costheta - 1.0f) + 1.0f)*sqrtf(5.0f/(4.0f*PI_CUDA));
+	p += d_align_c*3.0f*(1.0f - costheta*costheta)*(cos(2.0f*phi) + 1.0)*sqrtf(5.0f/(24.0*4.0f*PI_CUDA));
 #endif
 
   return(p);
@@ -299,10 +304,10 @@ __device__ float align_masa(float x, float y, float z){
   float costheta;
   float r;
 
-#ifndef NEW_ALIGN
   r = x*x + y*y + z*z;
   r = sqrtf(r);
 
+#ifndef NEW_ALIGN
   if(r < 1.E-7)
     costheta = 1.0f;
   else
@@ -312,9 +317,6 @@ __device__ float align_masa(float x, float y, float z){
 #endif
 
 #ifdef NEW_ALIGN
-  r = x*x + y*y + z*z;
-  r = sqrtf(r);
-
   if(r < 1.E-7)
     costheta = 1.0f;
   else
@@ -560,9 +562,9 @@ __inline__ void normalizacion_func_masa(dim3 dimGrid, dim3 dimBlock, curandState
 }
 
 /*Kernel: que inicializa los RNGs*/
-__global__ void setup_kernel(curandState *state, int entero){
+__global__ void setup_kernel(curandState *state, unsigned long long entero){
   const unsigned int tid = threadIdx.x + blockIdx.x * THREADS_PER_BLOCK;
-  curand_init(entero, tid, 0, &state[tid]);
+  curand_init(entero,tid,0ULL,&state[tid]);
 }
 
 /*Kernel: Inicializa los contadores a cero*/
@@ -665,7 +667,7 @@ __global__ void kernel_integra_merchan(curandState *state)
   int i;
   __shared__ double s_value[THREADS_PER_BLOCK], s_sigma[THREADS_PER_BLOCK];
 
-  const float fmin = 0.1f, fmax = 1.0f;
+  const float fmin = 0.0f, fmax = 1.0f;
 
   /*Estado del RNG*/
   curandState seed = state[tid];
@@ -741,6 +743,37 @@ __inline__ float integra_merchan(dim3 dimGrid, dim3 dimBlock, curandState *devSt
   return(r);
 }
 
+float integra_merchan_analitica(){
+  clock_t cuenta;
+  cuenta = clock();
+  double i1,i2,a,b;
+  double function(double a, double b);
+  a = h_abmedio; b = 0.1;
+  i1 = function(a,b);
+  a = h_bcmedio; b = 0.1;
+  i2 = function(a,b);
+  float norma_merchan = (float)(i1*i2);
+  double time1 = ((double)(clock()-cuenta))/((double)CLOCKS_PER_SEC);
+  printf("  NormaForma: %E time %.15E\n",norma_merchan,time1);
+  return(norma_merchan);
+}
+
+double function(double a, double b){
+  double i;
+  //i  = (2.0*(a-1.0)*b*exp(-a*a*0.5/b/b));
+  //i -= (sqrt(2.0*M_PI)*((a-1.0)*a+b*b)*erf((a-1.0)/sqrt(2.0)/b));
+  //i += (sqrt(2.0*M_PI)*((a-1.0)*a+b*b)*erf(a/sqrt(2.0)/b));
+  //i -= (2.*a*b*exp(-(a-1.0)*(a-1.0)*0.5/b/b));
+  //i *= (-0.5*b);
+  //i /= (sqrt(2.0*M_PI)*b);
+
+  i  =  b*exp(-(a*a + 1.0)/(2*b*b))*(a*exp(a/(b*b)) - (a-1)*exp(1/(2*b*b)))/sqrt(2.0*M_PI);
+  i -=  0.5*(a*a - a + b*b)*erf((1. - a)/(sqrt(2.0)*b));
+  i -=  0.5*(a*a - a + b*b)*erf(a/(sqrt(2.0)*b));
+
+  return(i);
+}
+
 /*Integrador de la funcion de alineamiento para calcular la normalizacion*/
 __global__ void kernel_integra_align(curandState *state){
   const unsigned int tid = threadIdx.x + blockIdx.x * THREADS_PER_BLOCK;
@@ -758,21 +791,23 @@ __global__ void kernel_integra_align(curandState *state){
 
   value = 0.0f; sigma = 0.0f;
   for(i = 0; i < LAZOSPLUS; i++){
-    phi = curand_uniform(&seed)*PI_CUDA*0.5f;
-    costheta = curand_uniform(&seed);
+
+    phi = curand_uniform(&seed)*2.0*PI_CUDA;
+    costheta = 2.0*curand_uniform(&seed)-1.0;
+
 #ifndef NEW_ALIGN
     x = costheta;
-    y = sqrt(1.0f - costheta*costheta)*cos(phi);
-    z = sqrt(1.0f - costheta*costheta)*sin(phi);
-    tmp = align_masa(x,y,z);
+    y = sqrtf(1.0f - costheta*costheta)*cosf(phi);
+    z = sqrtf(1.0f - costheta*costheta)*sinf(phi);
 #endif
 
 #ifdef NEW_ALIGN
     x = sqrt(1.0f - costheta*costheta)*cos(phi);
     y = sqrt(1.0f - costheta*costheta)*sin(phi);
     z = costheta;
-    tmp = align_masa(x,y,z);
 #endif
+
+    tmp = align_masa(x,y,z);
 
     value += tmp;
     sigma += tmp*tmp;
@@ -803,6 +838,7 @@ __global__ void kernel_integra_align(curandState *state){
 __inline__ float integra_align(dim3 dimGrid, dim3 dimBlock, curandState *devStates){
   int k;
   float r, s;
+	float volumen;
 
   kernel_integra_align<<<dimGrid,dimBlock>>>(devStates);
   cudaThreadSynchronize();
@@ -825,10 +861,10 @@ __inline__ float integra_align(dim3 dimGrid, dim3 dimBlock, curandState *devStat
   s /= (float)((long)RNGS*(long)LAZOSPLUS);
   s  = sqrt(s);
 
-  //volumen = (float)M_PI*0.5f*(float)M_PI*0.5f;
+  volumen = 4.0*M_PI;
 
-  //s *= volumen;
   //r *= volumen;
+  //s *= volumen;
 
   /*Imprime en file de salida*/
   fprintf(stdout,"Integra Align: %e +/- %e\n",r,s);

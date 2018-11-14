@@ -19,7 +19,7 @@
 #define ANGULO 45
 #endif
 
-#define TRACERS_MASA_MIN 9.0f
+#define TRACERS_MASA_MIN 11.0f
 #define TRACERS_MASA_MAX 15.0f
 
 /*Cantidad total de hilos (RNG) que se van a tirar*/
@@ -44,22 +44,29 @@
 
 /*Grosor de la pizza*/
 #ifdef DOSH
-#define RANGOZ 50.0f
+#define RANGOZ 25.0f
 #else
 #define RANGOZ 5.0f
 #endif
 
 /*Numero de dimensiones de la integral*/
 #ifdef DOSH
-#define NDIM 15
+#define NDIM 12
 #else
-#define NDIM 7
+#define NDIM 6
 #endif
 
 /*Cantidad de pasos en cada direccion*/
-#define NPASOS   50
-#define PASOMIN -1.0
-#define PASOMAX  2.0
+//#define NPASOS   50
+//#define PASOMIN -1.0
+//#define PASOMAX  2.0
+#define NPASOS   30
+float h_radio_vector[NPASOS] = {
+	    1.105014e-01,1.349283e-01,1.647549e-01,2.011748e-01,2.456456e-01,2.999469e-01,
+      3.662517e-01,4.472136e-01,5.460725e-01,6.667848e-01,8.141811e-01,9.941601e-01,
+      1.213924e+00,1.482269e+00,1.809932e+00,2.210027e+00,2.698566e+00,3.295098e+00,
+      4.023497e+00,4.912912e+00,5.998937e+00,7.325034e+00,8.944272e+00,1.092145e+01,
+      1.333570e+01,1.628362e+01,1.988320e+01,2.427849e+01,2.964538e+01,3.619865e+01};
 
 #define NDIR 2
 
@@ -71,6 +78,12 @@ float h_sig[RNGS/THREADS_PER_BLOCK];
 __device__ float d_int[RNGS/THREADS_PER_BLOCK];
 __device__ float d_sig[RNGS/THREADS_PER_BLOCK];
 __device__ float d_integral[1],d_sigma[1];
+
+/*Parametros forma y alineacion*/
+float h_abmedio, h_bcmedio;
+float h_align_b, h_align_c;
+__device__ float d_abmedio, d_bcmedio;
+__device__ float d_align_b, d_align_c;
 
 /*Coeficientes de la forma y normalizacion, host version*/
 float h_bc[4][3];
@@ -89,6 +102,8 @@ float h_alig_m[11];
 float h_alig_rmin;
 float h_alig_rmax;
 float h_alig_dr;
+float h_centros_masa_min;
+float h_centros_masa_max;
 
 /*Coeficientes del alineamiento, device version*/
 __device__ float d_alig[10][30][5];
@@ -97,6 +112,8 @@ __device__ float d_alig_m[11];
 __device__ float d_alig_rmin;
 __device__ float d_alig_rmax;
 __device__ float d_alig_dr;
+__device__ float d_centros_masa_min;
+__device__ float d_centros_masa_max;
 
 /*Vectores de limites de las integrales, host version*/
 float h_xmin[NDIM];
@@ -107,19 +124,17 @@ float norma_funmasa;
 __constant__ float d_xmin[NDIM];
 __constant__ float d_xmax[NDIM];
 
-#include "lecturas.cu"
-
-#include "chrono.c"
-
 /*Incluye archivo con todas las funciones necesarias*/
+#include "lecturas.cu"
+#include "chrono.c"
 #include "common_functions.cu"
 #include "funciones.cu"
 #include "interpolacion.cu"
 
 /*Kernel: toma un punto aleatorio en el espacio N-Dimensional
-          y evalua la funcion integrando (T1h, T2h) en dicho punto.
-          La evaluacion se guarda en d_int y el cuadrado en d_sig.
-          Al final guarda el estado del RNG en state*/
+y evalua la funcion integrando (T1h, T2h) en dicho punto.
+La evaluacion se guarda en d_int y el cuadrado en d_sig.
+Al final guarda el estado del RNG en state*/
 __global__ void integra(curandState *state, float r, int eje){
   const unsigned int tid = threadIdx.x + blockIdx.x * THREADS_PER_BLOCK;
 
@@ -131,6 +146,9 @@ __global__ void integra(curandState *state, float r, int eje){
   float x[NDIM];
   float p[3];
   double value, sigma, tmp;
+#ifdef DOSH
+  double mod;
+#endif
 
   __shared__ float xmin[NDIM], dx[NDIM];
   __shared__ float s_value[THREADS_PER_BLOCK];
@@ -145,62 +163,63 @@ __global__ void integra(curandState *state, float r, int eje){
   /*Esperan hasta que todos terminen*/
   __syncthreads();
 
-  /*Tira un numero random x de dimension NDIM*/
   value = 0.0; sigma = 0.0;
   for(j = 0; j < LAZOS; j++){
+    /*Tira un numero random x de dimension NDIM*/
     do{
-      //x[NDIM-1] = dx[NDIM-1] * curand_uniform(&sedd) + xmin[NDIM-1];
-
       switch(eje){
         case 2 :
-          x[NDIM-2] = curand_uniform(&seed)*2.0f*PI_CUDA;
-          p[0] = r*cosf(x[NDIM-2]);
-          p[1] = r*sinf(x[NDIM-2]);
+          x[NDIM-1] = curand_uniform(&seed)*2.0f*PI_CUDA;
+          p[0] = r*cosf(x[NDIM-1]);
+          p[1] = r*sinf(x[NDIM-1]);
           break;
         case 1 :
-          x[NDIM-2] = dx[NDIM-2]*curand_uniform(&seed)+xmin[NDIM-2];
-          x[NDIM-2] = x[NDIM-2]*GRAD2RAD;
-          p[0] = r*cosf(x[NDIM-2]);
-          p[1] = r*sinf(x[NDIM-2]);
+          x[NDIM-1] = dx[NDIM-1]*curand_uniform(&seed)+xmin[NDIM-1];
+          x[NDIM-1] = x[NDIM-1]*GRAD2RAD;
+          p[0] = r*cosf(x[NDIM-1]);
+          p[1] = r*sinf(x[NDIM-1]);
           break;
         case 0 :
-          x[NDIM-2] = dx[NDIM-2]*curand_uniform(&seed)+xmin[NDIM-2];
-          x[NDIM-2] = x[NDIM-2]*GRAD2RAD;
-          p[1] = r*cosf(x[NDIM-2]);
-          p[0] = r*sinf(x[NDIM-2]);
+          x[NDIM-1] = dx[NDIM-1]*curand_uniform(&seed)+xmin[NDIM-1];
+          x[NDIM-1] = x[NDIM-1]*GRAD2RAD;
+          p[1] = r*cosf(x[NDIM-1]);
+          p[0] = r*sinf(x[NDIM-1]);
           break;
       }
 
       p[2] = curand_normal(&seed); /*Linea de la visual*/
       //p[2] = RANGOZ*(2.0*curand_uniform(&seed)-1.0); /*Linea de la visual*/
 
-#ifdef DOSH
-      for(i = 0; i <= 9; i++)
+      for(i = 0; i <= 4; i++)
         x[i] = dx[i] * curand_uniform(&seed) + xmin[i];
 
-      x[10] = curand_normal(&seed);
-      x[11] = curand_normal(&seed);
-      x[12] = curand_normal(&seed);
+      /*sqrt(2·pi) RANGOZ / exp(-tmp/2)*/
+      //tmp  = 2.0f*RANGOZ;
+      tmp  = SQRT_TWOPI_CUDA*RANGOZ*exp(p[2]*p[2]*0.5f);
+      p[2] *= RANGOZ;
 
-      tmp = x[10]*x[10] + x[11]*x[11] + x[12]*x[12];
-      if(tmp < 1.E-4){
-        tmp = 1.0E-2/sqrt(tmp);
-        x[10] *= tmp;
-        x[11] *= tmp;
-        x[12] *= tmp;
-        tmp = 1.0E-4;
+#ifdef DOSH
+      for(i = 5; i <= 7; i++)
+        x[i] = dx[i]*curand_uniform(&seed) + xmin[i];
+
+      x[8]  = curand_normal(&seed);
+      x[9]  = curand_normal(&seed);
+      x[10] = curand_normal(&seed);
+
+      mod = x[8]*x[8] + x[9]*x[9] + x[10]*x[10];
+      if(mod < 1.E-4){
+        mod = 1.0E-2/sqrt(mod);
+        x[8]  *= mod;
+        x[9]  *= mod;
+        x[10] *= mod;
+        mod = 1.0E-4;
       }
 
       /*sqrt(2·pi)^3 sigma^3 / exp(-tmp/2)*/
-      tmp  = SQRT_TWOPI_CUBO_CUDA*SIGMA3*exp(tmp*0.5f);
+      tmp   *= (SQRT_TWOPI_CUBO_CUDA*SIGMA3*exp(mod*0.5f));
+      x[8]  *= SIGMA;
+      x[9]  *= SIGMA;
       x[10] *= SIGMA;
-      x[11] *= SIGMA;
-      x[12] *= SIGMA;
-
-      /*sqrt(2·pi) RANGOZ / exp(-z*z/2)*/
-      //tmp  *= 2.0f*RANGOZ;
-      tmp  *= SQRT_TWOPI_CUDA*RANGOZ*exp(p[2]*p[2]*0.5f);
-      p[2] *= RANGOZ;
 
       tmp *= T2h(p,x);
 
@@ -210,17 +229,6 @@ __global__ void integra(curandState *state, float r, int eje){
       tmp *= interpolador(p);
       */
 #else 
-      for(i = 0; i <= 4; i++)
-        x[i] = dx[i] * curand_uniform(&seed) + xmin[i];
-
-      //x[3] = 1.0;
-      //x[4] = 0.0;
-
-      /*sqrt(2·pi) RANGOZ / exp(-tmp/2)*/
-      //tmp  = 2.0f*RANGOZ;
-      tmp  = SQRT_TWOPI_CUDA*RANGOZ*exp(p[2]*p[2]*0.5f);
-      p[2] *= RANGOZ;
-
       tmp *= T1h(p,x);
 
       /*
@@ -229,7 +237,6 @@ __global__ void integra(curandState *state, float r, int eje){
       tmp *= interpolador(p);
       */
 #endif
-
       if(isfinite(tmp))break;
     }while(1);
 
@@ -241,8 +248,10 @@ __global__ void integra(curandState *state, float r, int eje){
   s_value[it] = value;
   s_sigma[it] = sigma;
 
+  /*Esperan hasta que todos terminen*/
   __syncthreads();
 
+  /*Thread 0 colecta los resultados del bloque y guarda en la memoria global*/
   if(it == 0){
     value = 0.0f; sigma = 0.0f;
     for(i = 0; i < THREADS_PER_BLOCK; i++){
@@ -250,7 +259,8 @@ __global__ void integra(curandState *state, float r, int eje){
       sigma += s_sigma[i];
     }
     j = blockIdx.x;
-    /*Suma a la memoria global*/
+
+    /*Guarda en la memoria global*/
     d_int[j] = value;
     d_sig[j] = sigma;
   }
@@ -259,6 +269,7 @@ __global__ void integra(curandState *state, float r, int eje){
   state[tid] = seed;
 }
 
+/*Hace la suma mariposa en al placa*/
 __global__ void suma(void){
   const unsigned int tid = threadIdx.x + blockIdx.x * THREADS_PER_BLOCK;
   int inext;
@@ -290,17 +301,44 @@ __inline__ void printDevProp(cudaDeviceProp devProp){
   printf(" Total constant memory:     %zu\n", devProp.totalConstMem);
   printf(" Kernel execution timeout:  %s\n", (devProp.kernelExecTimeoutEnabled ? "Yes" : "No"));
   printf(" WarpSize:                  %d\n",devProp.warpSize);
-  printf(" Compute Capability:        %d%d\n",devProp.major,devProp.minor);
+  printf(" Compute Capability:        %d.%d\n",devProp.major,devProp.minor);
   printf("#############################################\n");
 }
 
-int setseed(void){
-  int seed;
+/*Setea la semilla del generador random*/
+unsigned long long setseed(void){
+  int s;
+  unsigned long long seed;
   FILE *pf;
   pf = fopen("/dev/urandom","r");
-  fread(&seed,sizeof(int),1,pf);
+  fread(&s,sizeof(int),1,pf);
   fclose(pf);
-  return seed;
+  seed = (unsigned long long)s;
+  return(seed);
+}
+
+/*Setea parametros y los copia a la tarjeta*/
+void set_variables(int argc, char **argv){
+  if(argc < 5){
+    printf("Usage: %s MASA_MIN MASA_MAX ABMEDIO BCMEDIO ALGN_C ALGN_B\n",argv[0]);
+    exit(EXIT_FAILURE);
+  }
+
+  h_centros_masa_min = atof(argv[1]);
+  h_centros_masa_max = atof(argv[2]);
+  h_abmedio = atof(argv[3]);
+  h_bcmedio = atof(argv[4]);
+  h_align_b = atof(argv[5]);
+  h_align_c = atof(argv[6]);
+
+  printf("%.02f %.02f %.02f %.02f\n",h_abmedio,h_bcmedio,h_align_b,h_align_c);
+
+  HANDLE_ERROR(cudaMemcpyToSymbol(d_centros_masa_min,&h_centros_masa_min,sizeof(float)));
+  HANDLE_ERROR(cudaMemcpyToSymbol(d_centros_masa_max,&h_centros_masa_max,sizeof(float)));
+  HANDLE_ERROR(cudaMemcpyToSymbol(d_abmedio,&h_abmedio,sizeof(float)));
+  HANDLE_ERROR(cudaMemcpyToSymbol(d_bcmedio,&h_bcmedio,sizeof(float)));
+  HANDLE_ERROR(cudaMemcpyToSymbol(d_align_b,&h_align_b,sizeof(float)));
+  HANDLE_ERROR(cudaMemcpyToSymbol(d_align_c,&h_align_c,sizeof(float)));
 }
 
 int main(int argc, char **argv){
@@ -314,24 +352,28 @@ int main(int argc, char **argv){
   float h_radio;
   curandState *devStates;
 
+  /*Setea el device a utilizar*/
+  //cudaSetDevice(DEVICE);
+  cudaGetDevice(&i);
+
+  /*Lee e imprime las propiedades del device*/
+  cudaDeviceProp devProp;
+  cudaGetDeviceProperties(&devProp, i);
+  printDevProp(devProp);
+
+  /*Setea parametros device*/
+  set_variables(argc,argv);
+
   elapsed = 0.0f;
   chrono(START,&time);
 
-  run = (argc > 1)? atoi(argv[1]) : 0;
+  run = (argc > 7)? atoi(argv[7]) : 0;
 
 #ifdef DOSH
   sprintf(term,"2h");
 #else
   sprintf(term,"1h");
 #endif
-
-  /*Setea el device a utilizar*/
-  cudaSetDevice(DEVICE);
-
-  /*Lee e imprime las propiedades del device*/
-  cudaDeviceProp devProp;
-  cudaGetDeviceProperties(&devProp, DEVICE);
-  printDevProp(devProp);
 
   /*Chequea Cantidad de Threads y de Blocks*/
   assert(THREADS_PER_BLOCK <= 1024);
@@ -341,13 +383,15 @@ int main(int argc, char **argv){
   dim3 dimBlock(THREADS_PER_BLOCK,1,1);
   dim3 dimGrid(RNGS/THREADS_PER_BLOCK,1,1);
 
-  fprintf(stdout,"Corriendo %d Blocks con %d threads cada uno\n",RNGS/THREADS_PER_BLOCK,THREADS_PER_BLOCK);
+  fprintf(stdout,"Corriendo %d Blocks con %d threads cada uno\n",
+                        RNGS/THREADS_PER_BLOCK,THREADS_PER_BLOCK);
 
   /*Allocatea memoria para el RNG*/
   HANDLE_ERROR(cudaMalloc((void **)&devStates,RNGS*sizeof(curandState)));
 
   /*Setea la semilla*/
-  int seed = setseed();
+  unsigned long long seed = setseed();
+  fprintf(stdout,"Seed %d\n",seed);
 
   /*Setea las semillas de los RNG en el device*/
   setup_kernel<<<dimGrid,dimBlock>>>(devStates,seed);
@@ -356,23 +400,32 @@ int main(int argc, char **argv){
   /*lee los coeficientes de los ajustes*/
   read_coefficients();
 
-  float Numin   = Nu_M(CENTROS_MASA_MIN);
-  float Numax   = Nu_M(CENTROS_MASA_MAX);
+  float Numin = Nu_M(h_centros_masa_min);
+  float Numax = Nu_M(h_centros_masa_max);
   float ncmedio = nc_medio(Numin,Numax,dimGrid,dimBlock,devStates);
+
   /*FUNCION DE MASA FIT*/
   //float ncmedio = nc_medio(CENTROS_MASA_MIN,CENTROS_MASA_MAX,dimGrid,dimBlock,devStates);
 
-#ifdef CG 
-  Numin   = Nu_M(TRACERS_MASA_MIN);
-  Numax   = Nu_M(TRACERS_MASA_MAX);
+  /*CHINGADA II*/
+  //float ncmedio = nc_medio(CENTROS_MASA_MIN,CENTROS_MASA_MAX,dimGrid,dimBlock,devStates);
+
+#ifdef CG
+  /*Computa NG_MEDIO*/
+  Numin = Nu_M(TRACERS_MASA_MIN);
+  Numax = Nu_M(TRACERS_MASA_MAX);
   float ngmedio = ng_medio(Numin,Numax,dimGrid,dimBlock,devStates);
+
   /*FUNCION DE MASA FIT*/
+  //float ngmedio = ng_medio(TRACERS_MASA_MIN,TRACERS_MASA_MAX,dimGrid,dimBlock,devStates);
+
+  /*CHINGADA II*/
   //float ngmedio = ng_medio(TRACERS_MASA_MIN,TRACERS_MASA_MAX,dimGrid,dimBlock,devStates);
 #endif
 
-#ifndef DOSH
   /*Chequea si la integral del perfil hasta el radio virial da 1*/
-  float norma_perfil = normalizacion_perfil(dimGrid,dimBlock,devStates);
+#ifndef DOSH
+  //float norma_perfil = normalizacion_perfil(dimGrid,dimBlock,devStates);
 #endif
   
   //prueba_ng_medio();
@@ -382,79 +435,50 @@ int main(int argc, char **argv){
 
   /*Calcula la normalizacion de la funcion de masa*/
   //normalizacion_func_masa(dimGrid,dimBlock,devStates);
-
-  proyectador_de_xilin(dimGrid,dimBlock,devStates);
+  
+  /*Calcula la funcion lineal proyectada*/
+  //proyectador_de_xilin(dimGrid,dimBlock,devStates);
 
   /*Setea los limites de integracion*/
   /*Halo Centro*/
-  h_xmin[0] = (float)CENTROS_MASA_MIN; /*Masa minima*/
-  h_xmax[0] = (float)CENTROS_MASA_MAX; /*Masa maxima*/
+  h_xmin[0] = (float)h_centros_masa_min; /*Masa minima*/
+  h_xmax[0] = (float)h_centros_masa_max; /*Masa maxima*/
   /*Forma*/
-  h_xmin[1] = 0.10f; /* ab minimo */
+  h_xmin[1] = 0.00f; /* ab minimo */
   h_xmax[1] = 1.00f; /* ab maximo */
-  h_xmin[2] = 0.10f; /* bc minimo */
+  h_xmin[2] = 0.00f; /* bc minimo */
   h_xmax[2] = 1.00f; /* bc maximo */
 
-  h_xmin[3] = -1.0f;     /*Orientacion del Halo Centro*/ 
+  h_xmin[3] =  0.0f;     /*Orientacion del Halo Centro*/ 
   h_xmax[3] =  1.0f;      
   h_xmin[4] =  0.0f;      
-  h_xmax[4] =  2.0*M_PI; 
+  h_xmax[4] =  0.5*M_PI; 
 
 #ifdef DOSH
   /*Halo Vecino*/
   h_xmin[5] = (float)TRACERS_MASA_MIN; /*Masa minima*/
   h_xmax[5] = (float)TRACERS_MASA_MAX; /*Masa maxima*/
-  h_xmin[6] = 0.10f; /* ab minimo */
+  h_xmin[6] = 0.00f; /* ab minimo */
   h_xmax[6] = 1.00f; /* ab maximo */
-  h_xmin[7] = 0.10f; /* bc minimo */
+  h_xmin[7] = 0.00f; /* bc minimo */
   h_xmax[7] = 1.00f; /* bc maximo */
 
-  h_xmin[8] =  0.0f;
-  h_xmax[8] =  0.0f;
-  h_xmin[9] =  0.0f;
-  h_xmax[9] =  0.0f;
-
-  h_xmin[10] =  0.0f;
-  h_xmax[10] =  0.0f;
-  h_xmin[11] =  0.0f;
-  h_xmax[11] =  0.0f;
-  h_xmin[12] =  0.0f;
-  h_xmax[12] =  0.0f;
+  h_xmin[8]  = 0.0f;
+  h_xmax[8]  = 0.0f;
+  h_xmin[9]  = 0.0f;
+  h_xmax[9]  = 0.0f;
+  h_xmin[10] = 0.0f;
+  h_xmax[10] = 0.0f;
 #endif
 
   /** Orientacion **/
-  h_xmin[NDIM-2] = 0.0f;
-  h_xmax[NDIM-2] = (float)ANGULO;
   h_xmin[NDIM-1] = 0.0f;
-  h_xmax[NDIM-1] = 0.0f;
+  h_xmax[NDIM-1] = (float)ANGULO;
 
 #ifdef MERCHAN
   float norma_merchan = integra_merchan(dimGrid,dimBlock,devStates);
+  //float norma_merchan = integra_merchan_analitica();
 #endif
-
-  //clock_t cuenta;
-  //cuenta = clock();
-  //double i1,i2,a,b;
-  //a = ABMEDIO; b = 0.1;
-  //i1  = (2.0*(a-1.0)*b*exp(-a*a*0.5/b/b));
-  //i1 -= (sqrt(2.0*M_PI)*((a-1.0)*a+b*b)*erf((a-1.0)/sqrt(2.0)/b));
-  //i1 += (sqrt(2.0*M_PI)*((a-1.0)*a+b*b)*erf(a/sqrt(2.0)/b));
-  //i1 -= (2.*a*b*exp(-(a-1.0)*(a-1.0)*0.5/b/b));
-  //i1 *= (-0.5*b);
-  //i1 /= (sqrt(2.0*M_PI)*b);
-
-  //a = BCMEDIO; b = 0.1;
-  //i2  = (2.0*(a-1.0)*b*exp(-a*a*0.5/b/b));
-  //i2 -= (sqrt(2.0*M_PI)*((a-1.0)*a+b*b)*erf((a-1.0)/sqrt(2.0)/b));
-  //i2 += (sqrt(2.0*M_PI)*((a-1.0)*a+b*b)*erf(a/sqrt(2.0)/b));
-  //i2 -= (2.*a*b*exp(-(a-1.0)*(a-1.0)*0.5/b/b));
-  //i2 *= (-0.5*b);
-  //i2 /= (sqrt(2.0*M_PI)*b);
-
-  //float norma_merchan = i1*i2;
-  //double time1 = ((double)(clock()-cuenta))/((double)CLOCKS_PER_SEC);
-  //printf("  NormaForma: %E time %.15E\n",norma_merchan,time1);
-
 #ifdef DOSH
   float norma_align = integra_align(dimGrid,dimBlock,devStates);
 #endif
@@ -465,12 +489,9 @@ int main(int argc, char **argv){
 
   /*Calcula el hipervolumen de integracion*/
   volumen = 1.0f;
+  for(i = 0; i <= 4; i++) volumen *= (h_xmax[i] - h_xmin[i]);
 #ifdef DOSH
-  for(i = 0; i <= 2; i++) volumen *= (h_xmax[i] - h_xmin[i]);
-  for(i = 3; i <= 7; i++) volumen *= (h_xmax[i] - h_xmin[i]);
-#else
-  for(i = 0; i <= 2; i++) volumen *= (h_xmax[i] - h_xmin[i]);
-  for(i = 3; i <= 4; i++) volumen *= (h_xmax[i] - h_xmin[i]);
+  for(i = 5; i <= 7; i++) volumen *= (h_xmax[i] - h_xmin[i]);
 #endif
 
   /*Calcula la memoria total en el device*/
@@ -497,9 +518,10 @@ int main(int argc, char **argv){
   printf("--------------------------\n");
 
   printf("Computando termino de %s....\n",term);
+  fflush(stdout);
 
-  float dpaso;
-  dpaso = (PASOMAX - PASOMIN)/(float)NPASOS;
+  //float dpaso;
+  //dpaso = (PASOMAX - PASOMIN)/(float)NPASOS;
 
   /*
   //sprintf(filename,"FC_3D_13.00-14.00_19.dat");
@@ -522,15 +544,16 @@ int main(int argc, char **argv){
     /*En cada direccion hace NPASOS pasos*/
     for(i = 0; i < NPASOS; i++){
       /*Setea posicion en la direccion dada*/
-      h_radio = dpaso*(float)(i) + PASOMIN;
-      h_radio = powf(10.0f,h_radio);
+      //h_radio = dpaso*(float)(i) + PASOMIN;
+      //h_radio = powf(10.0f,h_radio);
+      h_radio = h_radio_vector[i];
+
 
       /*Lanza kernel*/
       integra<<<dimGrid,dimBlock>>>(devStates,h_radio,j);
       cudaThreadSynchronize();
-      /*Termina kernel*/
-
       CHECK_KERNEL_SUCCESS();
+      /*Termina kernel*/
 
       /*Copia sumatorias al host y termina de reducir en el host*/
       HANDLE_ERROR(cudaMemcpyFromSymbol(h_int,d_int,(RNGS/THREADS_PER_BLOCK)*sizeof(float)));
@@ -561,20 +584,20 @@ int main(int argc, char **argv){
       s /= norma_merchan;
 
 #ifndef DOSH
-      r /= norma_perfil;
-      s /= norma_perfil;
+      //r /= norma_perfil;
+      //s /= norma_perfil;
 #endif
 
 #ifdef DOSH
       r /= norma_align;
       s /= norma_align;
-      r /= norma_merchan;
-      s /= norma_merchan;
+      //r /= norma_merchan;
+      //s /= norma_merchan;
 #endif
 
 #ifdef CG
-			r /= ngmedio;
-			s /= ngmedio;
+      r /= ngmedio;
+      s /= ngmedio;
 #endif
 
       /*Imprime en file de salida*/

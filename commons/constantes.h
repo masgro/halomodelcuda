@@ -83,19 +83,19 @@
                                      //orientacion del halo vecino (4*pi).
 //#define NORMA_ORIENTACION_CROSS 0.10132118364233778 //factor para normalizar la func. de probabilidad de
                                    //orientacion del halo vecino (pi*pi).
-#define NORMA_ORIENTACION_CROSS 0.00806288360829987 //factor para normalizar la func. de probabilidad de
+//#define NORMA_ORIENTACION_CROSS 0.00806288360829987 //factor para normalizar la func. de probabilidad de
                                    //orientacion del halo vecino (2*pi*pi*2*pi).
+#define NORMA_ORIENTACION_CROSS 0.0126651479552922 //(1/(2*pi*2*2*pi)
 //#define NORMA_ORIENTACION_PIZZA 0.31831f //1/pi
-//#define NORMA_ORIENTACION_PIZZA 0.63662f //1/(pi*0.5)
+//#define NORMA_ORIENTACION_PIZZA 0.63662f //1/(pi*0.5) 
 //#define NORMA_ORIENTACION_PIZZA 0.4052847f //1/(pi*0.5)**2
 //#define NORMA_ORIENTACION_PIZZA 0.0506605918211689 //1/(pi*2*pi)
 //#define NORMA_ORIENTACION_PIZZA 0.202642367284676 //1/(pi*0.5*pi)
 //#define NORMA_ORIENTACION_PIZZA 0.15915f //1/(2*pi)
-#define NORMA_ORIENTACION_PIZZA  0.07957747154594767f//1/(4*pi)
+//#define NORMA_ORIENTACION_PIZZA  0.07957747154594767f//1/(4*pi)
 
 #define FACTOR_JS 0.50f
 #define GRAD2RAD 1.74532925e-2f
-
 
 #if(MAG==16)
 /*HOD Manuel -16*/

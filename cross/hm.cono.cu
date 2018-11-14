@@ -26,7 +26,11 @@
 #define RNGS 65536
 
 /*Cantidad de veces que se lanza el Kernel de integracion*/
+#ifdef DOSH
+#define LAZOS 1000
+#else
 #define LAZOS 100
+#endif
 #define LAZOSPLUS 1000
 
 /*Cantidad de Threads por Block*/
@@ -50,17 +54,22 @@
 #endif
 
 /*Cantidad de pasos en cada direccion*/
-#define NPASOS   100
-#define PASOMIN -1.00
-#define PASOMAX  1.85
+//#define NPASOS   100
+//#define PASOMIN -1.00
+//#define PASOMAX  1.85
 
-#undef NPASOS
+//#ifndef DOSH
+//#undef NPASOS
+//#define NPASOS   20
+//float h_radio_vector[NPASOS] = {0.119379,0.165646,0.229845,0.318927,0.442533,0.614046,0.852031,1.182253,
+//                                1.640459,2.276252,3.158458,4.382582,6.081139,8.438007,11.708325,16.246120,
+//                                22.542629,31.279476,43.402466,60.223957};
+
 #define NPASOS   25
-float h_radio_vector[NPASOS] = {1.1399923e-01,1.4815143e-01,1.9253504e-01,2.5021520e-01,3.2517537e-01,
-                                4.2259231e-01,5.4919362e-01,7.1372253e-01,9.2754149e-01,1.2054168e+00,
-                                1.5665389e+00,2.0358467e+00,2.6457512e+00,3.4383726e+00,4.4684496e+00,
-                                5.8071198e+00,7.5468326e+00,9.8077326e+00,1.2745960e+01,1.6564426e+01,
-                                2.1526846e+01,2.7975912e+01,3.6357018e+01,4.7248943e+01,6.1403919e+01};
+float h_radio_vector[NPASOS] = {1.1399923e-01,1.4815143e-01,1.9253504e-01,2.5021520e-01,3.2517537e-01,4.2259231e-01,5.4919362e-01,7.1372253e-01,9.2754149e-01,1.2054168e+00,
+1.5665389e+00,2.0358467e+00,2.6457512e+00,3.4383726e+00,4.4684496e+00,5.8071198e+00,7.5468326e+00,9.8077326e+00,1.2745960e+01,1.6564426e+01,
+2.1526846e+01,2.7975912e+01,3.6357018e+01,4.7248943e+01,6.1403919e+01};
+//#endif
 
 /*Vectores integral y sigma, host version*/
 float h_int[RNGS/THREADS_PER_BLOCK];
@@ -94,6 +103,8 @@ float h_alig_m[11];
 float h_alig_rmin;
 float h_alig_rmax;
 float h_alig_dr;
+float h_centros_masa_min;
+float h_centros_masa_max;
 
 /*Coeficientes del alineamiento, device version*/
 __device__ float d_alig[10][30][5];
@@ -102,6 +113,8 @@ __device__ float d_alig_m[11];
 __device__ float d_alig_rmin;
 __device__ float d_alig_rmax;
 __device__ float d_alig_dr;
+__device__ float d_centros_masa_min;
+__device__ float d_centros_masa_max;
 
 /*Vectores de limites de las integrales, host version*/
 float h_xmin[NDIM];
@@ -174,40 +187,40 @@ __global__ void integra(curandState *state, float r, int eje){
 
 
 #ifdef DOSH
-      	for(i = 0; i < 6; i++)
-      	  x[i] = dx[i] * curand_uniform(&seed) + xmin[i];
-      	
-      	/*Posicion del halo vecino respecto del punto p*/
-      	x[6] = curand_normal(&seed);
-      	x[7] = curand_normal(&seed);
-      	x[8] = curand_normal(&seed);
+      for(i = 0; i < 6; i++)
+        x[i] = dx[i] * curand_uniform(&seed) + xmin[i];
+      
+      /*Posicion del halo vecino respecto del punto p*/
+      x[6] = curand_normal(&seed);
+      x[7] = curand_normal(&seed);
+      x[8] = curand_normal(&seed);
 
-      	tmp = x[6]*x[6] + x[7]*x[7] + x[8]*x[8];
-      	if(tmp < 1.E-4){ 
-      	  /*Esto es para evitar que el halo vecino caiga muy cerca
-      	  del punto p, si cae muy cerca la densidad revienta*/
-      	  tmp = 1.0E-2/sqrt(tmp);
-      	  x[6] *= tmp;
-      	  x[7] *= tmp;
-      	  x[8] *= tmp;
-      	  tmp = 1.0E-4;
-      	}
+      tmp = x[6]*x[6] + x[7]*x[7] + x[8]*x[8];
+      if(tmp < 1.E-4){ 
+        /*Esto es para evitar que el halo vecino caiga muy cerca
+        del punto p, si cae muy cerca la densidad revienta*/
+        tmp = 1.0E-2/sqrt(tmp);
+        x[6] *= tmp;
+        x[7] *= tmp;
+        x[8] *= tmp;
+        tmp = 1.0E-4;
+      }
 
-      	for(i = 9; i < NDIM-2; i++)
-      	  x[i] = dx[i] * curand_uniform(&seed) + xmin[i];
+      for(i = 9; i < NDIM-2; i++)
+        x[i] = dx[i] * curand_uniform(&seed) + xmin[i];
 
-      	x[6] *= SIGMA;
-      	x[7] *= SIGMA;
-      	x[8] *= SIGMA;
+      x[6] *= SIGMA;
+      x[7] *= SIGMA;
+      x[8] *= SIGMA;
 
-      	/*sqrt(2·pi)^3 sigma^3 / exp(-tmp/2)*/
-      	tmp  = SQRT_TWOPI_CUBO_CUDA*SIGMA3*exp(tmp*0.5f);
-      	tmp *= T2h(p,x);
+      /*sqrt(2·pi)^3 sigma^3 / exp(-tmp/2)*/
+      tmp  = SQRT_TWOPI_CUBO_CUDA*SIGMA3*exp(tmp*0.5f);
+      tmp *= T2h(p,x);
 #else
-      	for(i = 0; i < NDIM-2; i++)
-      	  x[i] = dx[i] * curand_uniform(&seed) + xmin[i];
+      for(i = 0; i < NDIM-2; i++)
+        x[i] = dx[i] * curand_uniform(&seed) + xmin[i];
 
-      	tmp = T1h(p,x);
+      tmp = T1h(p,x);
 #endif
       if(isfinite(tmp))break;
     }while(1);
@@ -272,33 +285,39 @@ __inline__ void printDevProp(cudaDeviceProp devProp){
   printf(" Total constant memory:     %zu\n", devProp.totalConstMem);
   printf(" Kernel execution timeout:  %s\n", (devProp.kernelExecTimeoutEnabled ? "Yes" : "No"));
   printf(" WarpSize:                  %d\n",devProp.warpSize);
-  printf(" Compute Capability:        %d%d\n",devProp.major,devProp.minor);
+  printf(" Compute Capability:        %d.%d\n",devProp.major,devProp.minor);
   printf("#############################################\n");
 }
 
-int setseed(void){
-  int seed;
+unsigned long long setseed(void){
+  int s;
+  unsigned long long seed;
   FILE *pf;
   pf = fopen("/dev/urandom","r");
-  fread(&seed,sizeof(int),1,pf);
+  fread(&s,sizeof(int),1,pf);
   fclose(pf);
-  return seed;
+  seed = (unsigned long long)s;
+  return(seed);
 }
 
 void set_variables(int argc, char **argv){
 
-	if(argc < 5){
-		printf("Usage: %s ABMEDIO BCMEDIO ALGN_C ALGN_B\n",argv[0]);
-		exit(EXIT_FAILURE);
-	}
+  if(argc < 5){
+    printf("Usage: %s ABMEDIO BCMEDIO ALGN_C ALGN_B\n",argv[0]);
+    exit(EXIT_FAILURE);
+  }
 
-	h_abmedio = atof(argv[1]);
-	h_bcmedio = atof(argv[2]);
-	h_align_b = atof(argv[3]);
-	h_align_c = atof(argv[4]);
+  h_centros_masa_min = atof(argv[1]);
+  h_centros_masa_max = atof(argv[2]);
+  h_abmedio = atof(argv[3]);
+  h_bcmedio = atof(argv[4]);
+  h_align_b = atof(argv[5]);
+  h_align_c = atof(argv[6]);
 
-	printf("%.02f %.02f %.02f %.02f\n",h_abmedio,h_bcmedio,h_align_b,h_align_c);
+  printf("%.02f %.02f %.02f %.02f\n",h_abmedio,h_bcmedio,h_align_b,h_align_c);
 
+  HANDLE_ERROR(cudaMemcpyToSymbol(d_centros_masa_min,&h_centros_masa_min,sizeof(float)));
+  HANDLE_ERROR(cudaMemcpyToSymbol(d_centros_masa_max,&h_centros_masa_max,sizeof(float)));
   HANDLE_ERROR(cudaMemcpyToSymbol(d_abmedio,&h_abmedio,sizeof(float)));
   HANDLE_ERROR(cudaMemcpyToSymbol(d_bcmedio,&h_bcmedio,sizeof(float)));
   HANDLE_ERROR(cudaMemcpyToSymbol(d_align_b,&h_align_b,sizeof(float)));
@@ -314,31 +333,29 @@ int main(int argc, char **argv){
   float r,s;
   float volumen;
   float h_radio;
-
   curandState *devStates;
 
-	set_variables(argc,argv);
+  /*Setea el device a utilizar*/
+  //cudaSetDevice(DEVICE);
+  cudaGetDevice(&i);
+
+  /*Lee e imprime las propiedades del device*/
+  cudaDeviceProp devProp;
+  cudaGetDeviceProperties(&devProp, i);
+  printDevProp(devProp);
+
+  set_variables(argc,argv);
 
   elapsed = 0.0f;
   chrono(START,&time);
 
-  run = (argc > 1)? atoi(argv[1]) : 0;
-
-	run = 0;
+  run = (argc > 7)? atoi(argv[7]) : 0;
 
 #ifdef DOSH
   sprintf(term,"2h");
 #else
   sprintf(term,"1h");
 #endif
-
-  /*Setea el device a utilizar*/
-  cudaSetDevice(DEVICE);
-
-  /*Lee e imprime las propiedades del device*/
-  cudaDeviceProp devProp;
-  cudaGetDeviceProperties(&devProp, DEVICE);
-  printDevProp(devProp);
 
   /*Chequea Cantidad de Threads y de Blocks*/
   assert(THREADS_PER_BLOCK <= 1024);
@@ -355,7 +372,8 @@ int main(int argc, char **argv){
   HANDLE_ERROR(cudaMalloc((void **)&devStates,RNGS*sizeof(curandState)));
 
   /*Setea la semilla*/
-  int seed = setseed();
+  unsigned long long seed = setseed();
+  fprintf(stdout,"Seed %d\n",seed);
 
   /*Setea las semillas de los RNG en el device*/
   setup_kernel<<<dimGrid,dimBlock>>>(devStates,seed);
@@ -364,15 +382,15 @@ int main(int argc, char **argv){
   /*lee los coeficientes de los ajustes*/
   read_coefficients();
 
-  float Numin   = Nu_M(CENTROS_MASA_MIN);
-  float Numax   = Nu_M(CENTROS_MASA_MAX);
+  float Numin = Nu_M(h_centros_masa_min);
+  float Numax = Nu_M(h_centros_masa_max);
   float ncmedio = nc_medio(Numin,Numax,dimGrid,dimBlock,devStates);
   /*FUNCION DE MASA FIT*/
   //float ncmedio = nc_medio(CENTROS_MASA_MIN,CENTROS_MASA_MAX,dimGrid,dimBlock,devStates);
 
 #ifdef CG 
-  Numin   = Nu_M(TRACERS_MASA_MIN);
-  Numax   = Nu_M(TRACERS_MASA_MAX);
+  Numin = Nu_M(TRACERS_MASA_MIN);
+  Numax = Nu_M(TRACERS_MASA_MAX);
   float ngmedio = ng_medio(Numin,Numax,dimGrid,dimBlock,devStates);
   /*FUNCION DE MASA FIT*/
   //float ngmedio = ng_medio(TRACERS_MASA_MIN,TRACERS_MASA_MAX,dimGrid,dimBlock,devStates);
@@ -393,8 +411,8 @@ int main(int argc, char **argv){
 
   /*Setea los limites de integracion*/
   /*Halo Centro*/
-  h_xmin[0] = (float)CENTROS_MASA_MIN; /*Masa minima*/
-  h_xmax[0] = (float)CENTROS_MASA_MAX; /*Masa maxima*/
+  h_xmin[0] = (float)h_centros_masa_min; /*Masa minima*/
+  h_xmax[0] = (float)h_centros_masa_max; /*Masa maxima*/
   /*Forma*/
   h_xmin[1] = 0.00f; /* ab minimo */
   h_xmax[1] = 1.00f; /* ab maximo */
@@ -411,20 +429,27 @@ int main(int argc, char **argv){
   h_xmax[5] = 1.00f; /* bc maximo */
 
   /*Volumen*/
-  //h_xmin[6] = -RANGO; 
-  //h_xmax[6] = +RANGO;
-  //h_xmin[7] = -RANGO;
-  //h_xmax[7] = +RANGO;
-  //h_xmin[8] = -RANGO;
-  //h_xmax[8] = +RANGO;
+  h_xmin[6] = 0.0; 
+  h_xmax[6] = 1.0;
+  h_xmin[7] = 0.0;
+  h_xmax[7] = 1.0;
+  h_xmin[8] = 0.0;
+  h_xmax[8] = 1.0;
 
   /*Orientacion del halo vecino*/
   h_xmin[9]  = -M_PI;
   h_xmax[9]  =  M_PI;
-  h_xmin[10] = -M_PI*0.5;
-  h_xmax[10] =  M_PI*0.5;
+  h_xmin[10] =  -1.0;
+  h_xmax[10] =   1.0;
   h_xmin[11] = -M_PI;
   h_xmax[11] =  M_PI;
+
+  //h_xmin[9]  = 0.0;
+  //h_xmax[9]  = 1.0;
+  //h_xmin[10] = 0.0;
+  //h_xmax[10] = 1.0;
+  //h_xmin[11] = 0.0;
+  //h_xmax[11] = 1.0;
 #endif
 
   h_xmin[NDIM-2] = cos((float)ANGULO*M_PI/180.0);
@@ -445,22 +470,9 @@ int main(int argc, char **argv){
 
   /*Calcula el hipervolumen de integracion*/
   volumen = 1.0f;
-#ifdef DOSH
-  /* PARA UTILIZAR RANDOM GAUSSIANO EN 6,7,8 */
-  for(i = 0; i <= 5 ; i++){
-    printf("---- %d %f\n",i,(h_xmax[i] - h_xmin[i]));
-    volumen *= (h_xmax[i] - h_xmin[i]);
-  }
-  for(i = 9; i < NDIM-2; i++){
-    printf("---- %d %f\n",i,(h_xmax[i] - h_xmin[i]));
-    volumen *= (h_xmax[i] - h_xmin[i]);
-  }
-#else
   for(i = 0; i < NDIM-2; i++){
-    printf("---- %d %f\n",i,(h_xmax[i] - h_xmin[i]));
     volumen *= (h_xmax[i] - h_xmin[i]);
   }
-#endif
 
   /*Calcula la memoria total en el device*/
   size_t memfree, memtot;
@@ -486,9 +498,10 @@ int main(int argc, char **argv){
   printf("--------------------------\n");
 
   printf("Computando termino de %s....\n",term);
+  fflush(stdout);
 
-  float dpaso;
-  dpaso = (PASOMAX - PASOMIN)/(float)NPASOS;
+  //float dpaso;
+  //dpaso = (PASOMAX - PASOMIN)/(float)NPASOS;
 
   /*Recorre las 3 direcciones j=0(x),1(y),2(z)*/
   for(j = 0; j < 3; j++){
@@ -497,11 +510,16 @@ int main(int argc, char **argv){
     pfout = fopen(filename,"w");
 
     /*En cada direccion hace NPASOS pasos*/
+		int ntry = 0;
+    float limite = 0.01;
     for(i = 0; i < NPASOS; i++){
       /*Setea posicion en la direccion dada*/
-      h_radio = dpaso*(float)(i) + PASOMIN;
-      h_radio = powf(10.0f,h_radio);
+//#ifdef DOSH
+//      h_radio = dpaso*(float)(i) + PASOMIN;
+//      h_radio = powf(10.0f,h_radio);
+//#else
       h_radio = h_radio_vector[i];
+//#endif
 
       /*Lanza kernel*/
       integra<<<dimGrid,dimBlock>>>(devStates,h_radio,j);
@@ -517,7 +535,6 @@ int main(int argc, char **argv){
       /*Termina de reducir en el host*/
       r = 0.0; s = 0.0;
       for(l = 0; l < RNGS/THREADS_PER_BLOCK; l++){
-        if(isnan(h_int[l]))printf("%f %d %d\n",h_int[l],i,j);
         r += h_int[l];
         s += h_sig[l];
       }
@@ -538,11 +555,6 @@ int main(int argc, char **argv){
       r /= norma_merchan;
       s /= norma_merchan;
 
-#ifndef DOSH
-      //r /= norma_perfil;
-      //s /= norma_perfil;
-#endif
-
 #ifdef DOSH
       r /= norma_align;
       s /= norma_align;
@@ -551,12 +563,21 @@ int main(int argc, char **argv){
 #endif
 
 #ifdef CG
-			r /= ngmedio;
-			s /= ngmedio;
+      r /= ngmedio;
+      s /= ngmedio;
 #endif
 
-      /*Imprime en file de salida*/
-      fprintf(pfout,"%e %e %e\n",h_radio,r,s);
+			if((s/r) > limite){
+				i--;
+				ntry++;
+				if(ntry > 10){
+					limite += 0.005;
+					ntry = 0;
+				}
+			} else {
+        /*Imprime en file de salida*/
+        fprintf(pfout,"%e %e %e\n",h_radio,r,s);
+			}
     }
     /*Cierra archivo de salida*/
     fclose(pfout);
@@ -568,7 +589,7 @@ int main(int argc, char **argv){
   /*Computa el tiempo total utilizado en el device*/
   chrono(STOP,&time);
   elapsed += time;
-  printf("Tiempo: %lf [seg] \n", elapsed);
+  sprintf(message,"Tiempo: %lf [seg] \n", elapsed);RED(message);
 
   /*Fin del programa*/
   return(EXIT_SUCCESS);

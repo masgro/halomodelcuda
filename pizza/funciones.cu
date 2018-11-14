@@ -152,13 +152,14 @@ __device__ float T1h(float *r, float *x){
   f = cambio_de_coordenadas(ab,bc,costheta,phi,r);
   
   //tmp  = u_esferico(r,lgm,sqrtf(r[0]*r[0]+r[1]*r[1]+r[2]*r[2]));
-  tmp  = u(r,bc,ab,lgm,sqrtf(r[0]*r[0]+r[1]*r[1]+r[2]*r[2]));//sqrt(f);
+  tmp  = u(r,bc,ab,lgm,sqrtf(r[0]*r[0]+r[1]*r[1]+r[2]*r[2]));///sqrt(f);
 #ifdef CG
-	tmp *= RHOMEDIO/m;
+  tmp *= RHOMEDIO/m;
   tmp *= mom1(lgm);
 #endif
   tmp *= f_nu(nu)*nu*dlogNu_dlogM(lgm)*FMNORM;
-  //tmp *= chingada(lgm);
+	/*CHINGADA_II*/
+  //tmp *= chingada_II(lgm);
   /*FUNCION DE MASA FIT*/
   //tmp *= n(lgm)*m*m/RHOMEDIO;
   tmp *= forma(bc,ab);
@@ -172,7 +173,7 @@ __device__ float T2h(float *r, float *x){
   float lgm1, lgm2;
   float m1, m2;
   float nu1, nu2;
-  float ab2, bc2;
+  //float ab2, bc2;
   float ab1, bc1;
   float costheta1, phi1;
   //float costheta2, phi2;
@@ -198,19 +199,18 @@ __device__ float T2h(float *r, float *x){
   phi1      = x[4];
 
   lgm2      = x[5];
-  ab2       = x[6];
-  bc2       = x[7];
-  //costheta2 = x[8];
-  //phi2      = x[9];
-  y[0]      = x[10];
-  y[1]      = x[11];
-  y[2]      = x[12];
+  //ab2       = x[6];
+  //bc2       = x[7];
 
-   m1 = powf(10.0f,lgm1);
+  y[0]      = x[8];
+  y[1]      = x[9];
+  y[2]      = x[10];
+
+  m1  = powf(10.0f,lgm1);
   nu1 = Nu_M(lgm1);
   nu1 = powf(10.0f,nu1);
 
-   m2 = powf(10.0f,lgm2);
+  m2  = powf(10.0f,lgm2);
   nu2 = Nu_M(lgm2);
   nu2 = powf(10.0f,nu2);
 
@@ -221,21 +221,23 @@ __device__ float T2h(float *r, float *x){
   zc = y[2] + r[2];
 
   //tmp  = u_esferico(y,lgm2,sqrtf(r[0]*r[0]+r[1]*r[1]+r[2]*r[2]))/sqrt(f);
-  tmp  = u(y,bc2,ab2,lgm2,sqrtf(r[0]*r[0]+r[1]*r[1]+r[2]*r[2]));//sqrt(f);
+  tmp  = u(y,1.00,1.00,lgm2,sqrtf(r[0]*r[0]+r[1]*r[1]+r[2]*r[2]));//sqrt(f);
   tmp *= (RHOMEDIO/m1);
   #ifdef CG
   tmp *= (RHOMEDIO/m2);
   tmp *= mom1(lgm2);
   #endif
   tmp *= f_nu(nu2)*nu2*dlogNu_dlogM(lgm2)*FMNORM;
-  //tmp *= chingada(lgm2);
+  /*CHINGADA_II*/
+  //tmp *= chingada_II(lgm2);
   /*FUNCION DE MASA FIT*/
   //tmp *= n(lgm2)*m2*m2/RHOMEDIO;
-  tmp *= forma(bc2,ab2);
+  //tmp *= forma(bc2,ab2);
   //tmp *= NORMA_ORIENTACION; //factor para normalizar la func. de probabilidad de
-                            //orientacion del halo vecino.
+                                  //orientacion del halo vecino.
   tmp *= f_nu(nu1)*nu1*dlogNu_dlogM(lgm1)*FMNORM;
-  //tmp *= chingada(lgm1);
+  /*CHINGADA_II*/
+  //tmp *= chingada_II(lgm1);
   /*FUNCION DE MASA FIT*/
   //tmp *= n(lgm1)*m1*m1/RHOMEDIO;
   tmp *= forma(bc1,ab1);
@@ -314,11 +316,13 @@ __global__ void proyecta_xilin(curandState *state, float r){
 }
 
 __inline__ void proyectador_de_xilin(dim3 dimGrid, dim3 dimBlock, curandState *devStates){
-  int i,j,k;
+  int i,k;
   FILE *pfout;
   char filename[80];
   float r,s;
   float dpaso,h_radio;
+  #define PASOMIN -1.0
+  #define PASOMAX 2.0
   dpaso = (PASOMAX - PASOMIN)/(float)NPASOS;
 
   sprintf(filename,"xilin_proyectada.dat");
@@ -359,5 +363,7 @@ __inline__ void proyectador_de_xilin(dim3 dimGrid, dim3 dimBlock, curandState *d
   }
   //Cierra archivo de salida//
   fclose(pfout);
+  #undef PASOMIN
+  #undef PASOMAX
 }
 
